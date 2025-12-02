@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import AV from 'leancloud-storage'; // ❌ 预览环境暂时注释，部署时请取消注释并删除下方的 Mock SDK
+// import AV from 'leancloud-storage'; // ❌ 预览环境暂时注释，部署时请取消注释并删除下方的 Mock SDK
 import { 
-  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw
+  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame
 } from 'lucide-react';
 
-// --- 配置区域 (请在这里填入你的真实 Key) ---
+// --- 配置区域 (已填入您的真实 Key) ---
 const LC_APP_ID = "3z3uky7oBaOs2hFDXqXcxJbF-MdYXbMMI";
 const LC_APP_KEY = "9pGRzGBqLM5ihqXGhHdSrjY5";
+// 根据 AppID 前8位自动生成的国际版 Server URL
 const LC_SERVER_URL = "https://3z3uky7o.api.lncldglobal.com"; 
 
 // ======================================================================
@@ -92,7 +93,12 @@ const AV = {
         list = list.filter((i: any) => i[k] === this.filters[k]);
       }
       if (this._descending) {
-        list.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        // Mock sorting by date string if field is 'date'
+        list.sort((a: any, b: any) => {
+             const dateA = a.date || a.createdAt;
+             const dateB = b.date || b.createdAt;
+             return new Date(dateB).getTime() - new Date(dateA).getTime();
+        });
       }
       return list.slice(0, this._limit).map((i: any) => {
         const o = new MockObject(this.className);
@@ -147,15 +153,20 @@ const LoginScreen = ({ onJoin, onCreate }: { onJoin: (id: string, name: string) 
 
   if (mode === 'welcome') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-pink-100 via-rose-50 to-white flex flex-col items-center justify-center p-8 text-center">
+      <div className="min-h-screen bg-gradient-to-br from-pink-100 via-rose-50 to-white flex flex-col items-center justify-center p-8 text-center relative">
         <div className="w-24 h-24 bg-white/80 backdrop-blur-xl rounded-full flex items-center justify-center mb-8 shadow-xl shadow-pink-200/50 animate-bounce-slow">
           <Heart className="w-12 h-12 text-pink-500 fill-pink-500" />
         </div>
         <h1 className="text-3xl font-black text-gray-800 mb-2">Love Space</h1>
-        <p className="text-gray-500 mb-10 text-sm font-medium">国内极速版 (生产环境)</p>
+        <p className="text-gray-500 mb-10 text-sm font-medium">于雨轩爱陈莹莹</p>
         <div className="w-full max-w-xs space-y-4">
             <button onClick={() => setMode('create')} className="w-full bg-gray-900 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition-all">创建新空间</button>
             <button onClick={() => setMode('join')} className="w-full bg-white text-gray-800 font-bold py-4 rounded-2xl shadow-md border border-gray-100 active:scale-95 transition-all">我有邀请码</button>
+        </div>
+        <div className="absolute bottom-6 w-full text-center">
+          <p className="text-[10px] text-gray-400 font-light tracking-widest opacity-80">
+            莹光伴轩出品
+          </p>
         </div>
       </div>
     );
@@ -200,7 +211,15 @@ export default function CoupleApp() {
   const [newMemTitle, setNewMemTitle] = useState('');
   const [newMemDate, setNewMemDate] = useState('');
 
-  // 1. 自动登录
+  // 新增：写日记弹窗状态
+  const [showAddDiary, setShowAddDiary] = useState(false);
+  const [newDiaryContent, setNewDiaryContent] = useState('');
+
+  // 微信打卡状态
+  const [hasSaidLove, setHasSaidLove] = useState(false);
+  const [loveStreak, setLoveStreak] = useState(0); 
+
+  // 1. 自动登录与初始化
   useEffect(() => {
     const savedId = localStorage.getItem('lc_couple_id');
     const savedName = localStorage.getItem('lc_user_name');
@@ -216,7 +235,6 @@ export default function CoupleApp() {
     if (!isEntered || !coupleId) return;
     setIsLoading(true);
     try {
-      // 获取设置
       // @ts-ignore
       const settingsQuery = new AV.Query('Settings');
       settingsQuery.equalTo('coupleId', coupleId);
@@ -230,7 +248,6 @@ export default function CoupleApp() {
         setSettingsObjId(settingsRes.id || '');
       }
 
-      // 获取纪念日
       // @ts-ignore
       const memQuery = new AV.Query('Memorial');
       memQuery.equalTo('coupleId', coupleId);
@@ -244,7 +261,6 @@ export default function CoupleApp() {
       memList.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       setMemorials(memList);
 
-      // 获取日记
       // @ts-ignore
       const diaryQuery = new AV.Query('Diary');
       diaryQuery.equalTo('coupleId', coupleId);
@@ -261,6 +277,40 @@ export default function CoupleApp() {
       }));
       setDiaries(diaryList);
 
+      // --- 核心：查询打卡记录并计算连续天数 ---
+      const todayStr = new Date().toISOString().split('T')[0];
+      
+      // @ts-ignore
+      const checkQuery = new AV.Query('LoveCheckIn');
+      checkQuery.equalTo('coupleId', coupleId);
+      checkQuery.equalTo('userName', userName);
+      checkQuery.descending('date');
+      checkQuery.limit(100); 
+      const checks = await checkQuery.find();
+      
+      const hasToday = checks.some((c: any) => c.get('date') === todayStr);
+      setHasSaidLove(hasToday);
+
+      const checkDates = checks.map((c: any) => c.get('date'));
+      
+      let streak = 0;
+      let checkDate = new Date(); 
+      
+      if (!hasToday) {
+        checkDate.setDate(checkDate.getDate() - 1);
+      }
+
+      while (true) {
+        const dateStr = checkDate.toISOString().split('T')[0];
+        if (checkDates.includes(dateStr)) {
+          streak++;
+          checkDate.setDate(checkDate.getDate() - 1); 
+        } else {
+          break; 
+        }
+      }
+      setLoveStreak(streak);
+
     } catch (error) {
       console.error("Fetch error:", error);
     } finally {
@@ -270,7 +320,6 @@ export default function CoupleApp() {
 
   useEffect(() => {
     fetchData();
-    // 轮询机制
     const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, [isEntered, coupleId]);
@@ -286,8 +335,6 @@ export default function CoupleApp() {
 
   const handleCreate = async (name: string) => {
     const newId = Math.random().toString(36).substring(2, 8).toUpperCase();
-    
-    // 初始化设置到 LeanCloud
     // @ts-ignore
     const SettingsClass = AV.Object.extend('Settings');
     const settingsObj = new SettingsClass();
@@ -295,7 +342,6 @@ export default function CoupleApp() {
     settingsObj.set('names', '我们');
     settingsObj.set('startDate', new Date().toISOString().split('T')[0]);
     await settingsObj.save();
-
     enterSpace(newId, name);
   };
 
@@ -308,6 +354,27 @@ export default function CoupleApp() {
       localStorage.removeItem('lc_couple_id');
       setIsEntered(false);
       setCoupleId('');
+    }
+  };
+
+  const handleSayLove = async () => {
+    setHasSaidLove(true);
+    setLoveStreak(s => s + 1); 
+    
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+      // @ts-ignore
+      const CheckInClass = AV.Object.extend('LoveCheckIn');
+      const check = new CheckInClass();
+      check.set('coupleId', coupleId);
+      check.set('userName', userName); 
+      check.set('date', todayStr);
+      await check.save();
+      alert("太棒了！已连续打卡记录到云端 ❤️");
+      fetchData();
+    } catch (e) {
+      console.error("Check-in failed", e);
+      alert("网络好像有点小差错，但爱意已经记录在心里了！");
     }
   };
 
@@ -332,18 +399,34 @@ export default function CoupleApp() {
     }
   };
 
-  const addDiary = async () => {
-    const text = prompt("今天发生了什么有趣的事？");
-    if(text) {
+  // 修复：使用弹窗而不是 prompt
+  const openDiaryModal = () => {
+    setShowAddDiary(true);
+  };
+
+  const saveDiary = async () => {
+    if (!newDiaryContent.trim()) {
+      alert("日记内容不能为空哦");
+      return;
+    }
+    
+    try {
       // @ts-ignore
       const DiaryClass = AV.Object.extend('Diary');
       const d = new DiaryClass();
       d.set('coupleId', coupleId);
-      d.set('text', text);
-      d.set('mood', '🥰');
+      d.set('text', newDiaryContent);
+      d.set('mood', '🥰'); // 以后可以扩展心情选择
       d.set('authorName', userName);
       await d.save();
+      
+      setShowAddDiary(false);
+      setNewDiaryContent('');
       fetchData();
+      alert("日记发布成功！");
+    } catch (e) {
+      console.error("Diary save failed", e);
+      alert("发布失败，请检查网络或 LeanCloud 配置是否正确。");
     }
   };
 
@@ -394,6 +477,7 @@ export default function CoupleApp() {
       <div className="relative z-10 flex-1 overflow-y-auto p-6 space-y-6 pb-24 scrollbar-hide">
         {view === 'home' && (
           <div className="animate-fade-in">
+            {/* 计时卡片 */}
             <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] p-8 text-center shadow-xl border border-white/50 relative overflow-hidden">
                 <p className="text-gray-600 text-xs font-bold mb-2 uppercase tracking-[0.2em]">Being In Love</p>
                 <h1 className="text-7xl font-black tracking-tighter text-gray-800 mb-1 drop-shadow-sm">{daysTogether}</h1>
@@ -402,6 +486,35 @@ export default function CoupleApp() {
                    <Sparkles size={12} className="text-yellow-500" /> Since {settings.startDate}
                 </div>
             </div>
+
+            {/* 新增：微信打卡确认 (带连续天数) */}
+            <div className="mt-4 bg-white/60 backdrop-blur-lg rounded-2xl p-4 shadow-sm border border-white/40 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`p-2.5 rounded-full transition-colors ${hasSaidLove ? 'bg-green-100 text-green-600' : 'bg-pink-100 text-pink-500'}`}>
+                  {hasSaidLove ? <CheckCircle2 size={20} /> : <MessageCircle size={20} />}
+                </div>
+                <div className="flex flex-col">
+                  <span className="font-bold text-gray-700 text-sm">{hasSaidLove ? '今天爱意已送达' : '微信发“我爱你”了吗？'}</span>
+                  <div className="flex items-center gap-1 mt-0.5">
+                     <span className="text-[10px] text-gray-500">{hasSaidLove ? '真棒！' : '记得去说一声'}</span>
+                     {loveStreak > 0 && (
+                       <span className="flex items-center gap-0.5 text-[10px] font-bold text-orange-500 bg-orange-100 px-1.5 py-0.5 rounded-full">
+                         <Flame size={10} className="fill-orange-500" /> 连续 {loveStreak} 天
+                       </span>
+                     )}
+                  </div>
+                </div>
+              </div>
+              {!hasSaidLove && (
+                <button 
+                  onClick={handleSayLove}
+                  className="bg-green-500 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-lg shadow-green-200 hover:bg-green-600 active:scale-95 transition"
+                >
+                  确认已发
+                </button>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-4 mt-6">
                <button onClick={() => setView('memorials')} className="bg-white/60 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-col items-center gap-3 active:scale-95 transition-transform hover:scale-[1.02]">
                   <Gift size={24} className="text-blue-500" /><span className="font-bold text-gray-700">纪念日</span>
@@ -417,6 +530,7 @@ export default function CoupleApp() {
           </div>
         )}
 
+        {/* ... memorials, diary, settings views ... */}
         {view === 'memorials' && (
            <div className="space-y-4 animate-fade-in">
               <div className="flex justify-between items-center mb-2">
@@ -443,7 +557,7 @@ export default function CoupleApp() {
             <div className="space-y-4 animate-fade-in">
                 <div className="flex justify-between items-center mb-2">
                   <h2 className="text-2xl font-bold text-gray-800">交换日记</h2>
-                  <button onClick={addDiary} className="text-sm bg-pink-500 text-white px-4 py-2 rounded-xl font-bold shadow-lg shadow-pink-200 active:scale-95 transition">写日记</button>
+                  <button onClick={openDiaryModal} className="text-sm bg-pink-500 text-white px-4 py-2 rounded-xl font-bold shadow-lg shadow-pink-200 active:scale-95 transition">写日记</button>
               </div>
               {diaries.length === 0 && <div className="text-center py-10 text-gray-400">日记本空空的</div>}
               {diaries.map(d => (
@@ -486,6 +600,25 @@ export default function CoupleApp() {
                 <input className="w-full bg-gray-50 rounded-2xl p-4 mb-3 outline-none focus:ring-2 focus:ring-pink-200" placeholder="例如: 第一次约会" value={newMemTitle} onChange={e=>setNewMemTitle(e.target.value)} />
                 <input className="w-full bg-gray-50 rounded-2xl p-4 mb-6 outline-none focus:ring-2 focus:ring-pink-200" type="date" value={newMemDate} onChange={e=>setNewMemDate(e.target.value)} />
                 <div className="flex gap-3"><button onClick={() => setShowAddMem(false)} className="flex-1 py-3.5 bg-gray-100 rounded-xl font-bold text-gray-500 hover:bg-gray-200 transition">取消</button><button onClick={addMemorial} className="flex-1 py-3.5 bg-gray-900 rounded-xl font-bold text-white hover:bg-black transition">保存</button></div>
+            </div>
+        </div>
+      )}
+
+      {/* 新增：写日记弹窗 */}
+      {showAddDiary && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white w-full max-w-sm rounded-[2rem] p-8 shadow-2xl animate-pop-in">
+                <h3 className="font-bold text-xl mb-4 text-gray-800 text-center">记录此刻</h3>
+                <textarea 
+                  className="w-full bg-gray-50 rounded-2xl p-4 mb-6 outline-none focus:ring-2 focus:ring-pink-200 min-h-[120px] resize-none" 
+                  placeholder="今天发生了什么有趣的事？" 
+                  value={newDiaryContent} 
+                  onChange={e=>setNewDiaryContent(e.target.value)} 
+                />
+                <div className="flex gap-3">
+                    <button onClick={() => setShowAddDiary(false)} className="flex-1 py-3.5 bg-gray-100 rounded-xl font-bold text-gray-500 hover:bg-gray-200 transition">取消</button>
+                    <button onClick={saveDiary} className="flex-1 py-3.5 bg-pink-500 rounded-xl font-bold text-white hover:bg-pink-600 transition shadow-lg shadow-pink-200">发布</button>
+                </div>
             </div>
         </div>
       )}
