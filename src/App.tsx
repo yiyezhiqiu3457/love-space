@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame, ListTodo, CheckSquare, Trash2, Droplet, Thermometer, Smartphone, Share, Camera, Calendar, ChevronLeft, ChevronRight, Clock
+  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame, ListTodo, CheckSquare, Trash2, Droplet, Thermometer, Smartphone, Share, Camera, Calendar, ChevronLeft, ChevronRight, Clock, User
 } from 'lucide-react';
 
 // ======================================================================
@@ -16,7 +16,12 @@ import AV from 'leancloud-storage';
 // --- 配置区域 (请确保这些 Key 是您自己的 LeanCloud 应用 Key) ---
 const LC_APP_ID = "3z3uky7oBaOs2hFDXqXcxJbF-MdYXbMMI";
 const LC_APP_KEY = "9pGRzGBqLM5ihqXGhHdSrjY5";
-const LC_SERVER_URL = "https://3z3uky7o.api.lncldglobal.com"; 
+
+// ⚠️ 核心修改：使用 Vercel 代理绕过跨域限制
+// 原来的地址: "https://3z3uky7o.api.lncldglobal.com"
+// 修改后的地址: "/api" (配合 vercel.json 使用)
+const LC_SERVER_URL = "/api"; 
+
 
 
 

@@ -1,0 +1,8 @@
+{
+      "rewrites": [
+        {
+          "source": "/api/:path*",
+          "destination": "https://3z3uky7o.api.lncldglobal.com/:path*"
+        }
+      ]
+    }
