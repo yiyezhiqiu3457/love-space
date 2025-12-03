@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame, ListTodo, CheckSquare, Trash2, Droplet, Thermometer, Smartphone, Share, Camera, Calendar, ChevronLeft, ChevronRight, Clock, User
+  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame, ListTodo, CheckSquare, Trash2, Droplet, Thermometer, Smartphone, Share, Camera, Calendar, ChevronLeft, ChevronRight, Clock
 } from 'lucide-react';
 
 // ======================================================================
 // ⚠️ 发布必读 / DEPLOYMENT GUIDE
 // ======================================================================
 // 1. 安装依赖: npm install leancloud-storage
-// 2. 取消下方 import 的注释:
+// 2. 取消下方 import 的注释 (已添加 @ts-ignore 防止类型报错):
+// @ts-ignore
 import AV from 'leancloud-storage';
 // 3. 删除或注释掉下方的 "PREVIEW MOCK SDK" 整个区域
 // ======================================================================
@@ -189,7 +190,8 @@ export default function CoupleApp() {
         title: m.get('title'),
         date: m.get('date')
       }));
-      memList.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      // 修复：添加类型定义以解决 'implicit any' 错误
+      memList.sort((a: Memorial, b: Memorial) => new Date(a.date).getTime() - new Date(b.date).getTime());
       setMemorials(memList);
 
       // 4. 获取日记
@@ -835,6 +837,7 @@ export default function CoupleApp() {
                           <div className="flex justify-between items-center mt-2">
                              <span className="text-[10px] text-gray-400">{new Date(p.createdAt).toLocaleDateString()}</span>
                              
+                             {/* 修复：增大点击区域和图标大小 */}
                              <button onClick={() => deletePhoto(p.id)} className="p-2 -mr-2 text-gray-300 hover:text-red-400 active:scale-95 transition">
                                 <Trash2 size={16}/>
                              </button>
