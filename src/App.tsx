@@ -1129,6 +1129,32 @@ export default function CoupleApp() {
         </div>
       )}
 
+      {/* 新增：添加日程弹窗 */}
+      {showAddSchedule && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white w-full max-w-sm rounded-[2rem] p-8 shadow-2xl animate-pop-in">
+                <h3 className="font-bold text-xl mb-2 text-gray-800 text-center">添加日程</h3>
+                <p className="text-center text-sm text-gray-400 mb-6">{selectedDate}</p>
+                
+                <div className="space-y-3 mb-6">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-400 uppercase mb-1">标题</label>
+                        <input className="w-full bg-gray-50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-200" placeholder="例如: 看电影" value={newScheduleTitle} onChange={e=>setNewScheduleTitle(e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-400 uppercase mb-1">时间 (选填)</label>
+                        <input type="time" className="w-full bg-gray-50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-200" value={newScheduleTime} onChange={e=>setNewScheduleTime(e.target.value)} />
+                    </div>
+                </div>
+
+                <div className="flex gap-3">
+                    <button onClick={() => setShowAddSchedule(false)} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold text-gray-500 hover:bg-gray-200 transition">取消</button>
+                    <button onClick={addSchedule} className="flex-1 py-3 bg-blue-500 rounded-xl font-bold text-white hover:bg-blue-600 transition shadow-lg shadow-blue-200">保存</button>
+                </div>
+            </div>
+        </div>
+      )}
+
       {/* 新增：照片上传弹窗 */}
       {showUploadModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6 backdrop-blur-sm animate-fade-in">
