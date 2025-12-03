@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame, ListTodo, CheckSquare, Trash2, Droplet, Thermometer, Smartphone, Share, Camera, Calendar, ChevronLeft, ChevronRight, Clock
+  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame, ListTodo, CheckSquare, Trash2, Droplet, Thermometer, Smartphone, Share, Camera, Calendar, ChevronLeft, ChevronRight, Clock, User, AlertCircle
 } from 'lucide-react';
 
 // ======================================================================
@@ -20,7 +20,6 @@ const LC_SERVER_URL = "https://3z3uky7o.api.lncldglobal.com";
 
 
 
-
 // --- 初始化 LeanCloud ---
 if (typeof window !== 'undefined' && !AV.applicationId) {
   AV.init({
@@ -35,10 +34,44 @@ interface Memorial { id: string; coupleId: string; title: string; date: string; 
 interface DiaryEntry { id: string; coupleId: string; text: string; mood: string; authorName: string; createdAt: Date; }
 interface WishItem { id: string; coupleId: string; text: string; completed: boolean; createdAt: Date; }
 interface PhotoItem { id: string; coupleId: string; url: string; caption: string; createdAt: Date; }
-// 修改：增加 creator 字段
 interface ScheduleItem { id: string; coupleId: string; title: string; date: string; time?: string; type?: string; creator: string; } 
 interface CoupleSettings { startDate: string; names: string; bgImage?: string; }
 interface CycleData { lastDate: string; cycleDays: number; periodDays: number; }
+
+// --- 工具函数：图片压缩 ---
+const compressImage = (file: File): Promise<Blob> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (e) => {
+      const img = new Image();
+      img.src = e.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const maxWidth = 1200; // 限制最大宽度
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height *= maxWidth / width;
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error('Compression failed'));
+        }, 'image/jpeg', 0.7); // 压缩质量 0.7
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
 
 // --- 组件: 登录/配对 ---
 const LoginScreen = ({ onJoin, onCreate }: { onJoin: (id: string, name: string) => void, onCreate: (name: string) => void }) => {
@@ -136,6 +169,20 @@ export default function CoupleApp() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadCaption, setUploadCaption] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
+
+  // 错误提示辅助函数
+  const showErrorAlert = (action: string, error: any) => {
+      console.error(error);
+      let msg = "未知错误";
+      if (error.code === 403) {
+          msg = "权限不足 (403)。请去 LeanCloud 控制台检查该 Class 的权限是否对所有用户开放 (create/write)。";
+      } else if (error.message && error.message.includes("Network")) {
+          msg = "网络连接失败。请检查 LeanCloud 安全域名白名单配置是否正确 (不带末尾斜杠)。";
+      } else {
+          msg = error.message || JSON.stringify(error);
+      }
+      alert(`${action}失败: ${msg}`);
+  };
 
   useEffect(() => {
     const savedId = localStorage.getItem('lc_couple_id');
@@ -255,7 +302,7 @@ export default function CoupleApp() {
         date: s.get('date'),
         time: s.get('time'),
         type: s.get('type'),
-        creator: s.get('creator') || '未知' // 获取创建者
+        creator: s.get('creator') || '未知' 
       }));
       setSchedules(scheduleList);
 
@@ -314,24 +361,28 @@ export default function CoupleApp() {
 
   const handleCreate = async (name: string) => {
     const newId = Math.random().toString(36).substring(2, 8).toUpperCase();
-    // @ts-ignore
-    const SettingsClass = AV.Object.extend('Settings');
-    const settingsObj = new SettingsClass();
-    settingsObj.set('coupleId', newId);
-    settingsObj.set('names', '我们');
-    settingsObj.set('startDate', new Date().toISOString().split('T')[0]);
-    await settingsObj.save();
-    
-    // @ts-ignore
-    const CycleClass = AV.Object.extend('Cycle');
-    const cycleObj = new CycleClass();
-    cycleObj.set('coupleId', newId);
-    cycleObj.set('lastDate', '');
-    cycleObj.set('cycleDays', 28);
-    cycleObj.set('periodDays', 5);
-    await cycleObj.save();
+    try {
+        // @ts-ignore
+        const SettingsClass = AV.Object.extend('Settings');
+        const settingsObj = new SettingsClass();
+        settingsObj.set('coupleId', newId);
+        settingsObj.set('names', '我们');
+        settingsObj.set('startDate', new Date().toISOString().split('T')[0]);
+        await settingsObj.save();
+        
+        // @ts-ignore
+        const CycleClass = AV.Object.extend('Cycle');
+        const cycleObj = new CycleClass();
+        cycleObj.set('coupleId', newId);
+        cycleObj.set('lastDate', '');
+        cycleObj.set('cycleDays', 28);
+        cycleObj.set('periodDays', 5);
+        await cycleObj.save();
 
-    enterSpace(newId, name);
+        enterSpace(newId, name);
+    } catch(e) {
+        showErrorAlert("创建空间", e);
+    }
   };
 
   const handleJoin = (id: string, name: string) => {
@@ -362,6 +413,7 @@ export default function CoupleApp() {
       fetchData();
     } catch (e) {
       console.error("Check-in failed", e);
+      // 打卡失败不弹窗干扰用户，只在控制台记录
     }
   };
 
@@ -376,15 +428,14 @@ export default function CoupleApp() {
         s.set('title', newScheduleTitle);
         s.set('date', selectedDate);
         s.set('time', newScheduleTime); 
-        s.set('creator', userName); // 保存创建者
+        s.set('creator', userName); 
         await s.save();
         setShowAddSchedule(false);
         setNewScheduleTitle('');
         setNewScheduleTime('');
         fetchData();
     } catch (e) {
-        console.error(e);
-        alert("添加日程失败");
+        showErrorAlert("添加日程", e);
     }
   };
 
@@ -395,7 +446,7 @@ export default function CoupleApp() {
               await s.destroy();
               fetchData();
           } catch(e) {
-              console.error(e);
+              showErrorAlert("删除日程", e);
           }
       }
   };
@@ -417,22 +468,30 @@ export default function CoupleApp() {
   // --- 纪念日逻辑 ---
   const addMemorial = async () => {
     if (!newMemTitle || !newMemDate) return;
-    // @ts-ignore
-    const MemorialClass = AV.Object.extend('Memorial');
-    const m = new MemorialClass();
-    m.set('coupleId', coupleId);
-    m.set('title', newMemTitle);
-    m.set('date', newMemDate);
-    await m.save();
-    setShowAddMem(false); setNewMemTitle(''); setNewMemDate('');
-    fetchData(); 
+    try {
+        // @ts-ignore
+        const MemorialClass = AV.Object.extend('Memorial');
+        const m = new MemorialClass();
+        m.set('coupleId', coupleId);
+        m.set('title', newMemTitle);
+        m.set('date', newMemDate);
+        await m.save();
+        setShowAddMem(false); setNewMemTitle(''); setNewMemDate('');
+        fetchData(); 
+    } catch (e) {
+        showErrorAlert("添加纪念日", e);
+    }
   };
 
   const deleteMemorial = async (id: string) => {
     if(confirm("确认删除？")) {
-      const todo = AV.Object.createWithoutData('Memorial', id);
-      await todo.destroy();
-      fetchData();
+      try {
+          const todo = AV.Object.createWithoutData('Memorial', id);
+          await todo.destroy();
+          fetchData();
+      } catch (e) {
+          showErrorAlert("删除纪念日", e);
+      }
     }
   };
 
@@ -460,7 +519,7 @@ export default function CoupleApp() {
       fetchData();
       alert("日记发布成功！");
     } catch (e) {
-      console.error("Diary save failed", e);
+      showErrorAlert("发布日记", e);
     }
   };
 
@@ -477,7 +536,7 @@ export default function CoupleApp() {
       await w.save();
       setNewWishText('');
       fetchData();
-    } catch (e) { console.error(e); }
+    } catch (e) { showErrorAlert("添加愿望", e); }
   };
 
   const toggleWish = async (id: string, currentStatus: boolean) => {
@@ -486,7 +545,7 @@ export default function CoupleApp() {
       w.set('completed', !currentStatus);
       await w.save();
       fetchData();
-    } catch (e) { console.error(e); }
+    } catch (e) { showErrorAlert("更新愿望", e); }
   };
 
   const deleteWish = async (id: string) => {
@@ -495,7 +554,7 @@ export default function CoupleApp() {
       const w = AV.Object.createWithoutData('Wish', id);
       await w.destroy();
       fetchData();
-    } catch (e) { console.error(e); }
+    } catch (e) { showErrorAlert("删除愿望", e); }
   };
 
   // --- 相册逻辑 ---
@@ -539,8 +598,7 @@ export default function CoupleApp() {
         fetchData();
         cancelUpload(); 
     } catch (error) {
-        console.error(error);
-        alert("上传失败，请检查网络");
+        showErrorAlert("上传照片", error);
     } finally {
         setIsUploading(false);
     }
@@ -554,9 +612,8 @@ export default function CoupleApp() {
               await p.destroy();
               fetchData();
           } catch (error) {
-              console.error("Delete failed", error);
-              alert("删除失败，请检查网络");
-              fetchData();
+              showErrorAlert("删除照片", error);
+              fetchData(); // 失败回滚
           }
       }
   };
@@ -580,21 +637,24 @@ export default function CoupleApp() {
         alert("生理期信息已更新 ❤️");
         fetchData();
     } catch(e) {
-        console.error(e);
-        alert("保存失败");
+        showErrorAlert("保存生理期", e);
     }
   };
 
   // --- 设置更新 ---
   const updateSettings = async (newNames: string, newDate: string, newBg: string) => {
     if (!settingsObjId) return;
-    const s = AV.Object.createWithoutData('Settings', settingsObjId);
-    s.set('names', newNames);
-    s.set('startDate', newDate);
-    s.set('bgImage', newBg);
-    await s.save();
-    fetchData();
-    alert("设置已更新！");
+    try {
+        const s = AV.Object.createWithoutData('Settings', settingsObjId);
+        s.set('names', newNames);
+        s.set('startDate', newDate);
+        s.set('bgImage', newBg);
+        await s.save();
+        fetchData();
+        alert("设置已更新！");
+    } catch (e) {
+        showErrorAlert("更新设置", e);
+    }
   };
 
   const daysTogether = useMemo(() => {
@@ -1058,32 +1118,6 @@ export default function CoupleApp() {
                 <div className="flex gap-3">
                     <button onClick={() => setShowAddDiary(false)} className="flex-1 py-3.5 bg-gray-100 rounded-xl font-bold text-gray-500 hover:bg-gray-200 transition">取消</button>
                     <button onClick={saveDiary} className="flex-1 py-3.5 bg-pink-500 rounded-xl font-bold text-white hover:bg-pink-600 transition shadow-lg shadow-pink-200">发布</button>
-                </div>
-            </div>
-        </div>
-      )}
-
-      {/* 新增：添加日程弹窗 */}
-      {showAddSchedule && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white w-full max-w-sm rounded-[2rem] p-8 shadow-2xl animate-pop-in">
-                <h3 className="font-bold text-xl mb-2 text-gray-800 text-center">添加日程</h3>
-                <p className="text-center text-sm text-gray-400 mb-6">{selectedDate}</p>
-                
-                <div className="space-y-3 mb-6">
-                    <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase mb-1">标题</label>
-                        <input className="w-full bg-gray-50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-200" placeholder="例如: 看电影" value={newScheduleTitle} onChange={e=>setNewScheduleTitle(e.target.value)} />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase mb-1">时间 (选填)</label>
-                        <input type="time" className="w-full bg-gray-50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-200" value={newScheduleTime} onChange={e=>setNewScheduleTime(e.target.value)} />
-                    </div>
-                </div>
-
-                <div className="flex gap-3">
-                    <button onClick={() => setShowAddSchedule(false)} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold text-gray-500 hover:bg-gray-200 transition">取消</button>
-                    <button onClick={addSchedule} className="flex-1 py-3 bg-blue-500 rounded-xl font-bold text-white hover:bg-blue-600 transition shadow-lg shadow-blue-200">保存</button>
                 </div>
             </div>
         </div>
