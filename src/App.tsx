@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame, ListTodo, CheckSquare, Trash2, Droplet, Thermometer, Smartphone, Share, Camera, Calendar, ChevronLeft, ChevronRight, Clock, User, AlertCircle
+  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame, ListTodo, CheckSquare, Trash2, Droplet, Thermometer, Smartphone, Share, Camera, Calendar, ChevronLeft, ChevronRight, Clock
 } from 'lucide-react';
 
 // ======================================================================
@@ -582,8 +582,12 @@ export default function CoupleApp() {
     if (!selectedFile) return;
     setIsUploading(true);
     try {
+        // 使用压缩后的图片
+        const compressedBlob = await compressImage(selectedFile);
+        const compressedFile = new File([compressedBlob], selectedFile.name, { type: 'image/jpeg' });
+
         // @ts-ignore
-        const avFile = new AV.File(selectedFile.name, selectedFile);
+        const avFile = new AV.File(compressedFile.name, compressedFile);
         await avFile.save();
         
         // @ts-ignore
@@ -1118,6 +1122,32 @@ export default function CoupleApp() {
                 <div className="flex gap-3">
                     <button onClick={() => setShowAddDiary(false)} className="flex-1 py-3.5 bg-gray-100 rounded-xl font-bold text-gray-500 hover:bg-gray-200 transition">取消</button>
                     <button onClick={saveDiary} className="flex-1 py-3.5 bg-pink-500 rounded-xl font-bold text-white hover:bg-pink-600 transition shadow-lg shadow-pink-200">发布</button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* 新增：添加日程弹窗 */}
+      {showAddSchedule && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white w-full max-w-sm rounded-[2rem] p-8 shadow-2xl animate-pop-in">
+                <h3 className="font-bold text-xl mb-2 text-gray-800 text-center">添加日程</h3>
+                <p className="text-center text-sm text-gray-400 mb-6">{selectedDate}</p>
+                
+                <div className="space-y-3 mb-6">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-400 uppercase mb-1">标题</label>
+                        <input className="w-full bg-gray-50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-200" placeholder="例如: 看电影" value={newScheduleTitle} onChange={e=>setNewScheduleTitle(e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-400 uppercase mb-1">时间 (选填)</label>
+                        <input type="time" className="w-full bg-gray-50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-200" value={newScheduleTime} onChange={e=>setNewScheduleTime(e.target.value)} />
+                    </div>
+                </div>
+
+                <div className="flex gap-3">
+                    <button onClick={() => setShowAddSchedule(false)} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold text-gray-500 hover:bg-gray-200 transition">取消</button>
+                    <button onClick={addSchedule} className="flex-1 py-3 bg-blue-500 rounded-xl font-bold text-white hover:bg-blue-600 transition shadow-lg shadow-blue-200">保存</button>
                 </div>
             </div>
         </div>
