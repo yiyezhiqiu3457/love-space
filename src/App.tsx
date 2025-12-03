@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame, ListTodo, CheckSquare, Trash2, Droplet, Thermometer, Smartphone, Share, Camera
+  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame, ListTodo, CheckSquare, Trash2, Droplet, Thermometer, Smartphone, Share, Camera, Calendar, ChevronLeft, ChevronRight, Clock, User
 } from 'lucide-react';
 
 // ======================================================================
@@ -8,7 +8,7 @@ import {
 // ======================================================================
 // 1. 安装依赖: npm install leancloud-storage
 // 2. 取消下方 import 的注释:
- import AV from 'leancloud-storage';
+import AV from 'leancloud-storage';
 // 3. 删除或注释掉下方的 "PREVIEW MOCK SDK" 整个区域
 // ======================================================================
 
@@ -19,8 +19,8 @@ const LC_SERVER_URL = "https://3z3uky7o.api.lncldglobal.com";
 
 
 
+
 // --- 初始化 LeanCloud ---
-// 防止多次初始化
 if (typeof window !== 'undefined' && !AV.applicationId) {
   AV.init({
     appId: LC_APP_ID,
@@ -34,6 +34,8 @@ interface Memorial { id: string; coupleId: string; title: string; date: string; 
 interface DiaryEntry { id: string; coupleId: string; text: string; mood: string; authorName: string; createdAt: Date; }
 interface WishItem { id: string; coupleId: string; text: string; completed: boolean; createdAt: Date; }
 interface PhotoItem { id: string; coupleId: string; url: string; caption: string; createdAt: Date; }
+// 修改：增加 creator 字段
+interface ScheduleItem { id: string; coupleId: string; title: string; date: string; time?: string; type?: string; creator: string; } 
 interface CoupleSettings { startDate: string; names: string; bgImage?: string; }
 interface CycleData { lastDate: string; cycleDays: number; periodDays: number; }
 
@@ -88,7 +90,7 @@ const LoginScreen = ({ onJoin, onCreate }: { onJoin: (id: string, name: string) 
 
 // --- 主应用 ---
 export default function CoupleApp() {
-  const [view, setView] = useState<'home' | 'memorials' | 'album' | 'diary' | 'wishlist' | 'cycle' | 'settings'>('home'); 
+  const [view, setView] = useState<'home' | 'memorials' | 'album' | 'diary' | 'wishlist' | 'cycle' | 'settings' | 'schedule'>('home'); 
   const [coupleId, setCoupleId] = useState<string>('');
   const [userName, setUserName] = useState('');
   const [isEntered, setIsEntered] = useState(false);
@@ -99,6 +101,7 @@ export default function CoupleApp() {
   const [diaries, setDiaries] = useState<DiaryEntry[]>([]);
   const [wishes, setWishes] = useState<WishItem[]>([]);
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [settings, setSettings] = useState<CoupleSettings>({ startDate: new Date().toISOString().split('T')[0], names: '我们' });
   const [settingsObjId, setSettingsObjId] = useState<string>(''); 
   const [cycle, setCycle] = useState<CycleData>({ lastDate: '', cycleDays: 28, periodDays: 5 });
@@ -118,6 +121,13 @@ export default function CoupleApp() {
   const [loveStreak, setLoveStreak] = useState(0); 
   const [showInstallGuide, setShowInstallGuide] = useState(false);
 
+  // 日程相关状态
+  const [currentDate, setCurrentDate] = useState(new Date()); 
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [showAddSchedule, setShowAddSchedule] = useState(false);
+  const [newScheduleTitle, setNewScheduleTitle] = useState('');
+  const [newScheduleTime, setNewScheduleTime] = useState('');
+
   // 相册上传相关状态
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -126,7 +136,6 @@ export default function CoupleApp() {
   const [uploadCaption, setUploadCaption] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
 
-  // 初始化：检查本地是否有登录信息
   useEffect(() => {
     const savedId = localStorage.getItem('lc_couple_id');
     const savedName = localStorage.getItem('lc_user_name');
@@ -137,12 +146,11 @@ export default function CoupleApp() {
     }
   }, []);
 
-  // 核心数据获取逻辑
   const fetchData = async () => {
     if (!isEntered || !coupleId) return;
     setIsLoading(true);
     try {
-      // 1. 获取设置 (Settings)
+      // 1. 获取设置
       // @ts-ignore
       const settingsQuery = new AV.Query('Settings');
       settingsQuery.equalTo('coupleId', coupleId);
@@ -156,7 +164,7 @@ export default function CoupleApp() {
         setSettingsObjId(settingsRes.id || '');
       }
 
-      // 2. 获取生理期 (Cycle)
+      // 2. 获取生理期
       // @ts-ignore
       const cycleQuery = new AV.Query('Cycle');
       cycleQuery.equalTo('coupleId', coupleId);
@@ -170,7 +178,7 @@ export default function CoupleApp() {
         setCycleObjId(cycleRes.id || '');
       }
 
-      // 3. 获取纪念日 (Memorial)
+      // 3. 获取纪念日
       // @ts-ignore
       const memQuery = new AV.Query('Memorial');
       memQuery.equalTo('coupleId', coupleId);
@@ -184,7 +192,7 @@ export default function CoupleApp() {
       memList.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       setMemorials(memList);
 
-      // 4. 获取日记 (Diary)
+      // 4. 获取日记
       // @ts-ignore
       const diaryQuery = new AV.Query('Diary');
       diaryQuery.equalTo('coupleId', coupleId);
@@ -201,7 +209,7 @@ export default function CoupleApp() {
       }));
       setDiaries(diaryList);
 
-      // 5. 获取愿望清单 (Wish)
+      // 5. 获取愿望清单
       // @ts-ignore
       const wishQuery = new AV.Query('Wish');
       wishQuery.equalTo('coupleId', coupleId);
@@ -217,7 +225,7 @@ export default function CoupleApp() {
       wishList.sort((a: WishItem, b: WishItem) => Number(a.completed) - Number(b.completed));
       setWishes(wishList);
 
-      // 6. 获取相册 (Photo)
+      // 6. 获取相册
       // @ts-ignore
       const photoQuery = new AV.Query('Photo');
       photoQuery.equalTo('coupleId', coupleId);
@@ -227,17 +235,33 @@ export default function CoupleApp() {
         id: p.id || '',
         coupleId: p.get('coupleId'),
         url: p.get('url'),
-        caption: p.get('caption') || '', // 确保兼容旧数据
+        caption: p.get('caption') || '', 
         createdAt: p.createdAt || new Date()
       }));
       setPhotos(photoList);
 
-      // 7. 获取打卡 (LoveCheckIn)
+      // 7. 获取日程
+      // @ts-ignore
+      const scheduleQuery = new AV.Query('Schedule');
+      scheduleQuery.equalTo('coupleId', coupleId);
+      scheduleQuery.ascending('date');
+      const scheduleRes = await scheduleQuery.find();
+      const scheduleList = scheduleRes.map((s: any) => ({
+        id: s.id || '',
+        coupleId: s.get('coupleId'),
+        title: s.get('title'),
+        date: s.get('date'),
+        time: s.get('time'),
+        type: s.get('type'),
+        creator: s.get('creator') || '未知' // 获取创建者
+      }));
+      setSchedules(scheduleList);
+
+      // 8. 获取打卡
       const todayStr = new Date().toISOString().split('T')[0];
       // @ts-ignore
       const checkQuery = new AV.Query('LoveCheckIn');
       checkQuery.equalTo('coupleId', coupleId);
-      // 注意：这里我们查询当前用户的打卡记录来判断"今天是否发了"
       checkQuery.equalTo('userName', userName);
       checkQuery.descending('date');
       checkQuery.limit(100); 
@@ -246,7 +270,6 @@ export default function CoupleApp() {
       const hasToday = checks.some((c: any) => c.get('date') === todayStr);
       setHasSaidLove(hasToday);
 
-      // 计算连续打卡天数
       const checkDates = checks.map((c: any) => c.get('date'));
       let streak = 0;
       let checkDate = new Date(); 
@@ -271,7 +294,6 @@ export default function CoupleApp() {
     }
   };
 
-  // 轮询机制：每10秒自动同步一次数据
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 10000);
@@ -290,7 +312,6 @@ export default function CoupleApp() {
 
   const handleCreate = async (name: string) => {
     const newId = Math.random().toString(36).substring(2, 8).toUpperCase();
-    // 初始化设置
     // @ts-ignore
     const SettingsClass = AV.Object.extend('Settings');
     const settingsObj = new SettingsClass();
@@ -299,7 +320,6 @@ export default function CoupleApp() {
     settingsObj.set('startDate', new Date().toISOString().split('T')[0]);
     await settingsObj.save();
     
-    // 初始化生理期
     // @ts-ignore
     const CycleClass = AV.Object.extend('Cycle');
     const cycleObj = new CycleClass();
@@ -341,6 +361,55 @@ export default function CoupleApp() {
     } catch (e) {
       console.error("Check-in failed", e);
     }
+  };
+
+  // --- 日程逻辑 ---
+  const addSchedule = async () => {
+    if (!newScheduleTitle) return;
+    try {
+        // @ts-ignore
+        const ScheduleClass = AV.Object.extend('Schedule');
+        const s = new ScheduleClass();
+        s.set('coupleId', coupleId);
+        s.set('title', newScheduleTitle);
+        s.set('date', selectedDate);
+        s.set('time', newScheduleTime); 
+        s.set('creator', userName); // 保存创建者
+        await s.save();
+        setShowAddSchedule(false);
+        setNewScheduleTitle('');
+        setNewScheduleTime('');
+        fetchData();
+    } catch (e) {
+        console.error(e);
+        alert("添加日程失败");
+    }
+  };
+
+  const deleteSchedule = async (id: string) => {
+      if(confirm("确认删除该日程？")) {
+          try {
+              const s = AV.Object.createWithoutData('Schedule', id);
+              await s.destroy();
+              fetchData();
+          } catch(e) {
+              console.error(e);
+          }
+      }
+  };
+
+  const getDaysInMonth = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDay = new Date(year, month, 1).getDay(); 
+    return { daysInMonth, firstDay, year, month };
+  };
+
+  const changeMonth = (delta: number) => {
+      const newDate = new Date(currentDate);
+      newDate.setMonth(newDate.getMonth() + delta);
+      setCurrentDate(newDate);
   };
 
   // --- 纪念日逻辑 ---
@@ -432,14 +501,12 @@ export default function CoupleApp() {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // 生成预览图
     const objectUrl = URL.createObjectURL(file);
     setPreviewUrl(objectUrl);
     
     setSelectedFile(file);
     setShowUploadModal(true);
     
-    // 重置 input 以便能重复选择同一文件（如果取消后）
     if(fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -477,21 +544,16 @@ export default function CoupleApp() {
     }
   };
 
-  // 修复：优化删除体验（乐观更新 + 错误处理）
   const deletePhoto = async (id: string) => {
       if(confirm("删除这张照片？")) {
-          // 乐观更新：立即从界面移除，提升速度感
           setPhotos(currentPhotos => currentPhotos.filter(p => p.id !== id));
-          
           try {
               const p = AV.Object.createWithoutData('Photo', id);
               await p.destroy();
-              // 后台静默刷新一次以确保一致性
               fetchData();
           } catch (error) {
               console.error("Delete failed", error);
               alert("删除失败，请检查网络");
-              // 如果失败，重新拉取数据以恢复照片
               fetchData();
           }
       }
@@ -533,14 +595,12 @@ export default function CoupleApp() {
     alert("设置已更新！");
   };
 
-  // 计算在一起的天数
   const daysTogether = useMemo(() => {
     const start = new Date(settings.startDate);
     const now = new Date();
     return Math.floor(Math.abs(now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
   }, [settings.startDate]);
 
-  // 计算生理期状态
   const cycleStatus = useMemo(() => {
     if (!cycle.lastDate) return { status: 'unknown', text: '未设置', tip: '请设置上次经期' };
     const last = new Date(cycle.lastDate);
@@ -622,18 +682,21 @@ export default function CoupleApp() {
             </div>
 
             <div className="grid grid-cols-2 gap-4 mt-6">
-               <button onClick={() => setView('memorials')} className="bg-white/60 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-col items-center gap-3 active:scale-95 transition-transform hover:scale-[1.02]">
-                  <Gift size={24} className="text-blue-500" /><span className="font-bold text-gray-700">纪念日</span>
+               <button onClick={() => setView('schedule')} className="col-span-2 bg-gradient-to-r from-blue-100 to-cyan-100 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-row items-center justify-center gap-3 active:scale-95 transition-transform hover:scale-[1.01]">
+                  <div className="w-10 h-10 bg-blue-200 rounded-full flex items-center justify-center text-blue-600"><Calendar size={20} /></div>
+                  <span className="font-bold text-gray-700">共享日程</span>
                </button>
-               {/* 恋爱相册入口 - 修改位置 */}
+
+               <button onClick={() => setView('memorials')} className="bg-white/60 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-col items-center gap-3 active:scale-95 transition-transform hover:scale-[1.02]">
+                  <Gift size={24} className="text-red-400" /><span className="font-bold text-gray-700">纪念日</span>
+               </button>
                <button onClick={() => setView('album')} className="bg-white/60 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-col items-center gap-3 active:scale-95 transition-transform hover:scale-[1.02]">
                   <ImageIcon size={24} className="text-pink-500" /><span className="font-bold text-gray-700">恋爱相册</span>
                </button>
                <button onClick={() => setView('diary')} className="bg-white/60 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-col items-center gap-3 active:scale-95 transition-transform hover:scale-[1.02]">
                   <PenTool size={24} className="text-orange-500" /><span className="font-bold text-gray-700">日记本</span>
                </button>
-               {/* 愿望清单入口 */}
-               <button onClick={() => setView('wishlist')} className="bg-gradient-to-r from-violet-100 to-purple-100 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-col items-center gap-3 active:scale-95 transition-transform hover:scale-[1.02]">
+               <button onClick={() => setView('wishlist')} className="bg-white/60 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-col items-center gap-3 active:scale-95 transition-transform hover:scale-[1.02]">
                   <ListTodo size={24} className="text-purple-600" /><span className="font-bold text-gray-700">愿望清单</span>
                </button>
             </div>
@@ -643,6 +706,90 @@ export default function CoupleApp() {
               <span className="text-xs font-bold text-pink-500">点击复制配对码</span>
             </div>
           </div>
+        )}
+
+        {/* 共享日程页面 - 更新：显示创建者 */}
+        {view === 'schedule' && (
+            <div className="space-y-4 animate-fade-in pb-20">
+                <div className="flex justify-between items-center mb-2">
+                    <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                        <Calendar className="text-blue-500" /> 共享日程
+                    </h2>
+                </div>
+
+                {/* 日历卡片 */}
+                <div className="bg-white/80 backdrop-blur-md rounded-3xl p-4 shadow-sm border border-white/50">
+                    <div className="flex justify-between items-center mb-4 px-2">
+                        <button onClick={() => changeMonth(-1)} className="p-2 hover:bg-gray-100 rounded-full transition"><ChevronLeft size={20}/></button>
+                        <h3 className="font-bold text-lg text-gray-800">
+                            {currentDate.getFullYear()}年 {currentDate.getMonth() + 1}月
+                        </h3>
+                        <button onClick={() => changeMonth(1)} className="p-2 hover:bg-gray-100 rounded-full transition"><ChevronRight size={20}/></button>
+                    </div>
+                    
+                    <div className="grid grid-cols-7 gap-1 text-center mb-2">
+                        {['日','一','二','三','四','五','六'].map(d => (
+                            <div key={d} className="text-xs font-bold text-gray-400">{d}</div>
+                        ))}
+                    </div>
+                    
+                    <div className="grid grid-cols-7 gap-1">
+                        {Array.from({length: getDaysInMonth(currentDate).firstDay}).map((_, i) => <div key={`empty-${i}`} />)}
+                        {Array.from({length: getDaysInMonth(currentDate).daysInMonth}).map((_, i) => {
+                            const day = i + 1;
+                            const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                            const isSelected = dateStr === selectedDate;
+                            const hasEvent = schedules.some(s => s.date === dateStr);
+                            
+                            return (
+                                <div 
+                                    key={day} 
+                                    onClick={() => setSelectedDate(dateStr)}
+                                    className={`aspect-square flex flex-col items-center justify-center rounded-xl cursor-pointer transition text-sm relative
+                                        ${isSelected ? 'bg-blue-500 text-white shadow-md' : 'hover:bg-blue-50 text-gray-700'}`}
+                                >
+                                    <span className="font-bold">{day}</span>
+                                    {hasEvent && !isSelected && <div className="w-1.5 h-1.5 bg-blue-400 rounded-full mt-0.5"></div>}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* 选中日期的日程列表 */}
+                <div className="bg-white/60 backdrop-blur-md rounded-3xl p-5 shadow-sm border border-white/40 min-h-[200px]">
+                    <div className="flex justify-between items-center mb-4">
+                        <span className="font-bold text-gray-700">{selectedDate} 的安排</span>
+                        <button onClick={() => setShowAddSchedule(true)} className="text-xs bg-blue-500 text-white px-3 py-1.5 rounded-lg font-bold shadow-sm active:scale-95 transition">+ 添加</button>
+                    </div>
+                    
+                    <div className="space-y-3">
+                        {schedules.filter(s => s.date === selectedDate).length === 0 && (
+                            <div className="text-center py-8 text-gray-400 text-sm">今天暂无安排，去享受二人世界吧~</div>
+                        )}
+                        {schedules.filter(s => s.date === selectedDate).map(s => {
+                            const isMe = s.creator === userName;
+                            return (
+                                <div key={s.id} className="flex items-center bg-white p-3 rounded-xl border border-gray-100 shadow-sm transition-transform active:scale-[0.99]">
+                                    {/* 颜色区分条：蓝色代表自己，粉色代表对方 */}
+                                    <div className={`w-1 h-8 rounded-full mr-3 ${isMe ? 'bg-blue-400' : 'bg-pink-400'}`}></div>
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="font-bold text-gray-800 text-sm">{s.title}</span>
+                                            {/* 创建者标签 */}
+                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${isMe ? 'bg-blue-50 text-blue-500' : 'bg-pink-50 text-pink-500'}`}>
+                                                {isMe ? '我' : s.creator}
+                                            </span>
+                                        </div>
+                                        {s.time && <div className="text-xs text-gray-400 flex items-center gap-1"><Clock size={10}/> {s.time}</div>}
+                                    </div>
+                                    <button onClick={() => deleteSchedule(s.id)} className="text-gray-300 hover:text-red-400 p-2"><Trash2 size={14}/></button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
         )}
 
         {view === 'memorials' && (
@@ -688,7 +835,6 @@ export default function CoupleApp() {
                           <div className="flex justify-between items-center mt-2">
                              <span className="text-[10px] text-gray-400">{new Date(p.createdAt).toLocaleDateString()}</span>
                              
-                             {/* 修复：增大点击区域和图标大小 */}
                              <button onClick={() => deletePhoto(p.id)} className="p-2 -mr-2 text-gray-300 hover:text-red-400 active:scale-95 transition">
                                 <Trash2 size={16}/>
                              </button>
@@ -909,6 +1055,32 @@ export default function CoupleApp() {
                 <div className="flex gap-3">
                     <button onClick={() => setShowAddDiary(false)} className="flex-1 py-3.5 bg-gray-100 rounded-xl font-bold text-gray-500 hover:bg-gray-200 transition">取消</button>
                     <button onClick={saveDiary} className="flex-1 py-3.5 bg-pink-500 rounded-xl font-bold text-white hover:bg-pink-600 transition shadow-lg shadow-pink-200">发布</button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* 新增：添加日程弹窗 */}
+      {showAddSchedule && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white w-full max-w-sm rounded-[2rem] p-8 shadow-2xl animate-pop-in">
+                <h3 className="font-bold text-xl mb-2 text-gray-800 text-center">添加日程</h3>
+                <p className="text-center text-sm text-gray-400 mb-6">{selectedDate}</p>
+                
+                <div className="space-y-3 mb-6">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-400 uppercase mb-1">标题</label>
+                        <input className="w-full bg-gray-50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-200" placeholder="例如: 看电影" value={newScheduleTitle} onChange={e=>setNewScheduleTitle(e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-400 uppercase mb-1">时间 (选填)</label>
+                        <input type="time" className="w-full bg-gray-50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-200" value={newScheduleTime} onChange={e=>setNewScheduleTime(e.target.value)} />
+                    </div>
+                </div>
+
+                <div className="flex gap-3">
+                    <button onClick={() => setShowAddSchedule(false)} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold text-gray-500 hover:bg-gray-200 transition">取消</button>
+                    <button onClick={addSchedule} className="flex-1 py-3 bg-blue-500 rounded-xl font-bold text-white hover:bg-blue-600 transition shadow-lg shadow-blue-200">保存</button>
                 </div>
             </div>
         </div>
