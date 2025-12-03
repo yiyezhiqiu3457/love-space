@@ -1,0 +1,16 @@
+{
+  "name": "Love Space",
+  "short_name": "LoveSpace",
+  "description": "我们的恋爱小空间",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#fbcfe8",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

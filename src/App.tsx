@@ -1,122 +1,27 @@
-import React, { useState, useEffect, useMemo } from 'react';
-// import AV from 'leancloud-storage'; // ❌ 预览环境暂时注释，部署时请取消注释并删除下方的 Mock SDK
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame
+  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame, ListTodo, CheckSquare, Trash2, Droplet, Thermometer, Smartphone, Share, Camera
 } from 'lucide-react';
 
-// --- 配置区域 (已填入您的真实 Key) ---
+// ======================================================================
+// ⚠️ 发布必读 / DEPLOYMENT GUIDE
+// ======================================================================
+// 1. 安装依赖: npm install leancloud-storage
+// 2. 取消下方 import 的注释:
+ import AV from 'leancloud-storage';
+// 3. 删除或注释掉下方的 "PREVIEW MOCK SDK" 整个区域
+// ======================================================================
+
+// --- 配置区域 (请确保这些 Key 是您自己的 LeanCloud 应用 Key) ---
 const LC_APP_ID = "3z3uky7oBaOs2hFDXqXcxJbF-MdYXbMMI";
 const LC_APP_KEY = "9pGRzGBqLM5ihqXGhHdSrjY5";
-// 根据 AppID 前8位自动生成的国际版 Server URL
 const LC_SERVER_URL = "https://3z3uky7o.api.lncldglobal.com"; 
 
-// ======================================================================
-// 🛠️ PREVIEW MOCK SDK (预览专用模拟层)
-// 为了让你在右侧能直接看到效果，我们用 LocalStorage 模拟了 LeanCloud
-// ⚠️ 正式部署步骤：
-// 1. npm install leancloud-storage
-// 2. 取消顶部 import AV ... 的注释
-// 3. 删除或注释掉下面这个 Mock SDK 区域
-// ======================================================================
-const MOCK_DB_KEY = 'LC_MOCK_DB';
-const getDB = () => JSON.parse(localStorage.getItem(MOCK_DB_KEY) || '{}');
-const saveDB = (db: any) => localStorage.setItem(MOCK_DB_KEY, JSON.stringify(db));
-
-class MockObject {
-  className: string;
-  id: string;
-  data: any;
-  createdAt: Date;
-  constructor(className: string) {
-    this.className = className;
-    this.id = Math.random().toString(36).substr(2, 9);
-    this.data = {};
-    this.createdAt = new Date();
-  }
-  set(key: string, val: any) { this.data[key] = val; }
-  get(key: string) { return this.data[key]; }
-  async save() {
-    const db = getDB();
-    if (!db[this.className]) db[this.className] = [];
-    const idx = db[this.className].findIndex((i: any) => i.id === this.id);
-    const payload = { ...this.data, id: this.id, createdAt: this.createdAt };
-    if (idx >= 0) db[this.className][idx] = payload;
-    else db[this.className].push(payload);
-    saveDB(db);
-    return this;
-  }
-  async destroy() {
-    const db = getDB();
-    if (db[this.className]) {
-      db[this.className] = db[this.className].filter((i: any) => i.id !== this.id);
-      saveDB(db);
-    }
-  }
-}
-
-const AV = {
-  applicationId: null as string | null,
-  init: (opts: any) => { console.log('Mock AV Init:', opts); AV.applicationId = opts.appId; },
-  Object: {
-    extend: (className: string) => {
-      return class extends MockObject { constructor() { super(className); } }
-    },
-    createWithoutData: (className: string, id: string) => {
-      const obj = new MockObject(className);
-      obj.id = id;
-      // Try to hydrate for updates
-      const db = getDB();
-      if(db[className]) {
-        const found = db[className].find((i:any) => i.id === id);
-        if(found) { obj.data = found; obj.createdAt = new Date(found.createdAt); }
-      }
-      return obj;
-    }
-  },
-  Query: class {
-    className: string;
-    filters: any = {};
-    _descending: boolean = false;
-    _limit: number = 100;
-    constructor(className: string) { this.className = className; }
-    equalTo(key: string, val: any) { this.filters[key] = val; }
-    descending(key: string) { this._descending = true; }
-    limit(n: number) { this._limit = n; }
-    async first() {
-      const res = await this.find();
-      return res.length > 0 ? res[0] : null;
-    }
-    async find() {
-      const db = getDB();
-      let list = db[this.className] || [];
-      for (const k in this.filters) {
-        list = list.filter((i: any) => i[k] === this.filters[k]);
-      }
-      if (this._descending) {
-        // Mock sorting by date string if field is 'date'
-        list.sort((a: any, b: any) => {
-             const dateA = a.date || a.createdAt;
-             const dateB = b.date || b.createdAt;
-             return new Date(dateB).getTime() - new Date(dateA).getTime();
-        });
-      }
-      return list.slice(0, this._limit).map((i: any) => {
-        const o = new MockObject(this.className);
-        o.id = i.id;
-        o.data = i;
-        o.createdAt = new Date(i.createdAt);
-        return o;
-      });
-    }
-  }
-};
-// ======================================================================
-// END OF MOCK SDK
-// ======================================================================
 
 
 // --- 初始化 LeanCloud ---
-if (!AV.applicationId) {
+// 防止多次初始化
+if (typeof window !== 'undefined' && !AV.applicationId) {
   AV.init({
     appId: LC_APP_ID,
     appKey: LC_APP_KEY,
@@ -125,25 +30,12 @@ if (!AV.applicationId) {
 }
 
 // --- 类型定义 ---
-interface Memorial {
-  id: string;
-  coupleId: string;
-  title: string;
-  date: string; 
-}
-interface DiaryEntry {
-  id: string;
-  coupleId: string;
-  text: string;
-  mood: string;
-  authorName: string;
-  createdAt: Date;
-}
-interface CoupleSettings {
-  startDate: string; 
-  names: string;
-  bgImage?: string;
-}
+interface Memorial { id: string; coupleId: string; title: string; date: string; }
+interface DiaryEntry { id: string; coupleId: string; text: string; mood: string; authorName: string; createdAt: Date; }
+interface WishItem { id: string; coupleId: string; text: string; completed: boolean; createdAt: Date; }
+interface PhotoItem { id: string; coupleId: string; url: string; caption: string; createdAt: Date; }
+interface CoupleSettings { startDate: string; names: string; bgImage?: string; }
+interface CycleData { lastDate: string; cycleDays: number; periodDays: number; }
 
 // --- 组件: 登录/配对 ---
 const LoginScreen = ({ onJoin, onCreate }: { onJoin: (id: string, name: string) => void, onCreate: (name: string) => void }) => {
@@ -158,7 +50,7 @@ const LoginScreen = ({ onJoin, onCreate }: { onJoin: (id: string, name: string) 
           <Heart className="w-12 h-12 text-pink-500 fill-pink-500" />
         </div>
         <h1 className="text-3xl font-black text-gray-800 mb-2">Love Space</h1>
-        <p className="text-gray-500 mb-10 text-sm font-medium">于雨轩爱陈莹莹</p>
+        <p className="text-gray-500 mb-10 text-sm font-medium">记录我们的点滴——小🐟️干</p>
         <div className="w-full max-w-xs space-y-4">
             <button onClick={() => setMode('create')} className="w-full bg-gray-900 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition-all">创建新空间</button>
             <button onClick={() => setMode('join')} className="w-full bg-white text-gray-800 font-bold py-4 rounded-2xl shadow-md border border-gray-100 active:scale-95 transition-all">我有邀请码</button>
@@ -196,30 +88,45 @@ const LoginScreen = ({ onJoin, onCreate }: { onJoin: (id: string, name: string) 
 
 // --- 主应用 ---
 export default function CoupleApp() {
-  const [view, setView] = useState<'home' | 'memorials' | 'diary' | 'settings'>('home');
+  const [view, setView] = useState<'home' | 'memorials' | 'album' | 'diary' | 'wishlist' | 'cycle' | 'settings'>('home'); 
   const [coupleId, setCoupleId] = useState<string>('');
   const [userName, setUserName] = useState('');
   const [isEntered, setIsEntered] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
+  // 数据状态
   const [memorials, setMemorials] = useState<Memorial[]>([]);
   const [diaries, setDiaries] = useState<DiaryEntry[]>([]);
+  const [wishes, setWishes] = useState<WishItem[]>([]);
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [settings, setSettings] = useState<CoupleSettings>({ startDate: new Date().toISOString().split('T')[0], names: '我们' });
   const [settingsObjId, setSettingsObjId] = useState<string>(''); 
+  const [cycle, setCycle] = useState<CycleData>({ lastDate: '', cycleDays: 28, periodDays: 5 });
+  const [cycleObjId, setCycleObjId] = useState<string>('');
 
+  // UI 控制状态
   const [showAddMem, setShowAddMem] = useState(false);
   const [newMemTitle, setNewMemTitle] = useState('');
   const [newMemDate, setNewMemDate] = useState('');
-
-  // 新增：写日记弹窗状态
+  
   const [showAddDiary, setShowAddDiary] = useState(false);
   const [newDiaryContent, setNewDiaryContent] = useState('');
-
-  // 微信打卡状态
+  
+  const [newWishText, setNewWishText] = useState('');
+  
   const [hasSaidLove, setHasSaidLove] = useState(false);
   const [loveStreak, setLoveStreak] = useState(0); 
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
 
-  // 1. 自动登录与初始化
+  // 相册上传相关状态
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadCaption, setUploadCaption] = useState('');
+  const [previewUrl, setPreviewUrl] = useState('');
+
+  // 初始化：检查本地是否有登录信息
   useEffect(() => {
     const savedId = localStorage.getItem('lc_couple_id');
     const savedName = localStorage.getItem('lc_user_name');
@@ -230,11 +137,12 @@ export default function CoupleApp() {
     }
   }, []);
 
-  // 2. 数据获取
+  // 核心数据获取逻辑
   const fetchData = async () => {
     if (!isEntered || !coupleId) return;
     setIsLoading(true);
     try {
+      // 1. 获取设置 (Settings)
       // @ts-ignore
       const settingsQuery = new AV.Query('Settings');
       settingsQuery.equalTo('coupleId', coupleId);
@@ -248,6 +156,21 @@ export default function CoupleApp() {
         setSettingsObjId(settingsRes.id || '');
       }
 
+      // 2. 获取生理期 (Cycle)
+      // @ts-ignore
+      const cycleQuery = new AV.Query('Cycle');
+      cycleQuery.equalTo('coupleId', coupleId);
+      const cycleRes = await cycleQuery.first();
+      if (cycleRes) {
+        setCycle({
+          lastDate: cycleRes.get('lastDate') || '',
+          cycleDays: cycleRes.get('cycleDays') || 28,
+          periodDays: cycleRes.get('periodDays') || 5,
+        });
+        setCycleObjId(cycleRes.id || '');
+      }
+
+      // 3. 获取纪念日 (Memorial)
       // @ts-ignore
       const memQuery = new AV.Query('Memorial');
       memQuery.equalTo('coupleId', coupleId);
@@ -261,6 +184,7 @@ export default function CoupleApp() {
       memList.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       setMemorials(memList);
 
+      // 4. 获取日记 (Diary)
       // @ts-ignore
       const diaryQuery = new AV.Query('Diary');
       diaryQuery.equalTo('coupleId', coupleId);
@@ -277,12 +201,43 @@ export default function CoupleApp() {
       }));
       setDiaries(diaryList);
 
-      // --- 核心：查询打卡记录并计算连续天数 ---
+      // 5. 获取愿望清单 (Wish)
+      // @ts-ignore
+      const wishQuery = new AV.Query('Wish');
+      wishQuery.equalTo('coupleId', coupleId);
+      wishQuery.ascending('createdAt'); 
+      const wishRes = await wishQuery.find();
+      const wishList = wishRes.map((w: any) => ({
+        id: w.id || '',
+        coupleId: w.get('coupleId'),
+        text: w.get('text'),
+        completed: w.get('completed'),
+        createdAt: w.createdAt
+      }));
+      wishList.sort((a: WishItem, b: WishItem) => Number(a.completed) - Number(b.completed));
+      setWishes(wishList);
+
+      // 6. 获取相册 (Photo)
+      // @ts-ignore
+      const photoQuery = new AV.Query('Photo');
+      photoQuery.equalTo('coupleId', coupleId);
+      photoQuery.descending('createdAt');
+      const photoRes = await photoQuery.find();
+      const photoList = photoRes.map((p: any) => ({
+        id: p.id || '',
+        coupleId: p.get('coupleId'),
+        url: p.get('url'),
+        caption: p.get('caption') || '', // 确保兼容旧数据
+        createdAt: p.createdAt || new Date()
+      }));
+      setPhotos(photoList);
+
+      // 7. 获取打卡 (LoveCheckIn)
       const todayStr = new Date().toISOString().split('T')[0];
-      
       // @ts-ignore
       const checkQuery = new AV.Query('LoveCheckIn');
       checkQuery.equalTo('coupleId', coupleId);
+      // 注意：这里我们查询当前用户的打卡记录来判断"今天是否发了"
       checkQuery.equalTo('userName', userName);
       checkQuery.descending('date');
       checkQuery.limit(100); 
@@ -291,15 +246,13 @@ export default function CoupleApp() {
       const hasToday = checks.some((c: any) => c.get('date') === todayStr);
       setHasSaidLove(hasToday);
 
+      // 计算连续打卡天数
       const checkDates = checks.map((c: any) => c.get('date'));
-      
       let streak = 0;
       let checkDate = new Date(); 
-      
       if (!hasToday) {
         checkDate.setDate(checkDate.getDate() - 1);
       }
-
       while (true) {
         const dateStr = checkDate.toISOString().split('T')[0];
         if (checkDates.includes(dateStr)) {
@@ -318,13 +271,15 @@ export default function CoupleApp() {
     }
   };
 
+  // 轮询机制：每10秒自动同步一次数据
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, [isEntered, coupleId]);
 
-  // --- 逻辑处理 ---
+  // --- 业务逻辑 ---
+
   const enterSpace = (id: string, name: string) => {
     setCoupleId(id);
     setUserName(name);
@@ -335,6 +290,7 @@ export default function CoupleApp() {
 
   const handleCreate = async (name: string) => {
     const newId = Math.random().toString(36).substring(2, 8).toUpperCase();
+    // 初始化设置
     // @ts-ignore
     const SettingsClass = AV.Object.extend('Settings');
     const settingsObj = new SettingsClass();
@@ -342,6 +298,17 @@ export default function CoupleApp() {
     settingsObj.set('names', '我们');
     settingsObj.set('startDate', new Date().toISOString().split('T')[0]);
     await settingsObj.save();
+    
+    // 初始化生理期
+    // @ts-ignore
+    const CycleClass = AV.Object.extend('Cycle');
+    const cycleObj = new CycleClass();
+    cycleObj.set('coupleId', newId);
+    cycleObj.set('lastDate', '');
+    cycleObj.set('cycleDays', 28);
+    cycleObj.set('periodDays', 5);
+    await cycleObj.save();
+
     enterSpace(newId, name);
   };
 
@@ -360,7 +327,6 @@ export default function CoupleApp() {
   const handleSayLove = async () => {
     setHasSaidLove(true);
     setLoveStreak(s => s + 1); 
-    
     try {
       const todayStr = new Date().toISOString().split('T')[0];
       // @ts-ignore
@@ -374,10 +340,10 @@ export default function CoupleApp() {
       fetchData();
     } catch (e) {
       console.error("Check-in failed", e);
-      alert("网络好像有点小差错，但爱意已经记录在心里了！");
     }
   };
 
+  // --- 纪念日逻辑 ---
   const addMemorial = async () => {
     if (!newMemTitle || !newMemDate) return;
     // @ts-ignore
@@ -399,7 +365,7 @@ export default function CoupleApp() {
     }
   };
 
-  // 修复：使用弹窗而不是 prompt
+  // --- 日记逻辑 ---
   const openDiaryModal = () => {
     setShowAddDiary(true);
   };
@@ -409,27 +375,153 @@ export default function CoupleApp() {
       alert("日记内容不能为空哦");
       return;
     }
-    
     try {
       // @ts-ignore
       const DiaryClass = AV.Object.extend('Diary');
       const d = new DiaryClass();
       d.set('coupleId', coupleId);
       d.set('text', newDiaryContent);
-      d.set('mood', '🥰'); // 以后可以扩展心情选择
+      d.set('mood', '🥰'); 
       d.set('authorName', userName);
       await d.save();
-      
       setShowAddDiary(false);
       setNewDiaryContent('');
       fetchData();
       alert("日记发布成功！");
     } catch (e) {
       console.error("Diary save failed", e);
-      alert("发布失败，请检查网络或 LeanCloud 配置是否正确。");
     }
   };
 
+  // --- 愿望清单逻辑 ---
+  const addWish = async () => {
+    if (!newWishText.trim()) return;
+    try {
+      // @ts-ignore
+      const WishClass = AV.Object.extend('Wish');
+      const w = new WishClass();
+      w.set('coupleId', coupleId);
+      w.set('text', newWishText);
+      w.set('completed', false);
+      await w.save();
+      setNewWishText('');
+      fetchData();
+    } catch (e) { console.error(e); }
+  };
+
+  const toggleWish = async (id: string, currentStatus: boolean) => {
+    try {
+      const w = AV.Object.createWithoutData('Wish', id);
+      w.set('completed', !currentStatus);
+      await w.save();
+      fetchData();
+    } catch (e) { console.error(e); }
+  };
+
+  const deleteWish = async (id: string) => {
+    if(!confirm("确定要删除这个愿望吗？")) return;
+    try {
+      const w = AV.Object.createWithoutData('Wish', id);
+      await w.destroy();
+      fetchData();
+    } catch (e) { console.error(e); }
+  };
+
+  // --- 相册逻辑 ---
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    // 生成预览图
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewUrl(objectUrl);
+    
+    setSelectedFile(file);
+    setShowUploadModal(true);
+    
+    // 重置 input 以便能重复选择同一文件（如果取消后）
+    if(fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const cancelUpload = () => {
+    setShowUploadModal(false);
+    setSelectedFile(null);
+    setUploadCaption('');
+    setPreviewUrl('');
+  };
+
+  const confirmUpload = async () => {
+    if (!selectedFile) return;
+    setIsUploading(true);
+    try {
+        // @ts-ignore
+        const avFile = new AV.File(selectedFile.name, selectedFile);
+        await avFile.save();
+        
+        // @ts-ignore
+        const PhotoClass = AV.Object.extend('Photo');
+        const p = new PhotoClass();
+        p.set('coupleId', coupleId);
+        p.set('url', avFile.url());
+        p.set('caption', uploadCaption.trim() || '美好时刻'); 
+        await p.save();
+        
+        alert("上传成功！");
+        fetchData();
+        cancelUpload(); 
+    } catch (error) {
+        console.error(error);
+        alert("上传失败，请检查网络");
+    } finally {
+        setIsUploading(false);
+    }
+  };
+
+  // 修复：优化删除体验（乐观更新 + 错误处理）
+  const deletePhoto = async (id: string) => {
+      if(confirm("删除这张照片？")) {
+          // 乐观更新：立即从界面移除，提升速度感
+          setPhotos(currentPhotos => currentPhotos.filter(p => p.id !== id));
+          
+          try {
+              const p = AV.Object.createWithoutData('Photo', id);
+              await p.destroy();
+              // 后台静默刷新一次以确保一致性
+              fetchData();
+          } catch (error) {
+              console.error("Delete failed", error);
+              alert("删除失败，请检查网络");
+              // 如果失败，重新拉取数据以恢复照片
+              fetchData();
+          }
+      }
+  };
+
+  // --- 生理期更新 ---
+  const updateCycle = async (date: string, days: number) => {
+    if(!date) return;
+    try {
+        let c;
+        if(cycleObjId) {
+            c = AV.Object.createWithoutData('Cycle', cycleObjId);
+        } else {
+            // @ts-ignore
+            const CycleClass = AV.Object.extend('Cycle');
+            c = new CycleClass();
+            c.set('coupleId', coupleId);
+        }
+        c.set('lastDate', date);
+        c.set('cycleDays', Number(days));
+        await c.save();
+        alert("生理期信息已更新 ❤️");
+        fetchData();
+    } catch(e) {
+        console.error(e);
+        alert("保存失败");
+    }
+  };
+
+  // --- 设置更新 ---
   const updateSettings = async (newNames: string, newDate: string, newBg: string) => {
     if (!settingsObjId) return;
     const s = AV.Object.createWithoutData('Settings', settingsObjId);
@@ -441,11 +533,30 @@ export default function CoupleApp() {
     alert("设置已更新！");
   };
 
+  // 计算在一起的天数
   const daysTogether = useMemo(() => {
     const start = new Date(settings.startDate);
     const now = new Date();
     return Math.floor(Math.abs(now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
   }, [settings.startDate]);
+
+  // 计算生理期状态
+  const cycleStatus = useMemo(() => {
+    if (!cycle.lastDate) return { status: 'unknown', text: '未设置', tip: '请设置上次经期' };
+    const last = new Date(cycle.lastDate);
+    const now = new Date();
+    last.setHours(0,0,0,0);
+    now.setHours(0,0,0,0);
+    const diffTime = now.getTime() - last.getTime();
+    const dayIndex = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    const nextPeriodDate = new Date(last);
+    nextPeriodDate.setDate(last.getDate() + cycle.cycleDays);
+    const daysUntilNext = Math.ceil((nextPeriodDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (dayIndex >= 0 && dayIndex < cycle.periodDays) return { status: 'period', text: `经期第 ${dayIndex + 1} 天`, tip: '多喝热水，不许惹她生气！🍵' };
+    else if (daysUntilNext > 0 && daysUntilNext <= 7) return { status: 'soon', text: `还有 ${daysUntilNext} 天`, tip: '生理期快到了，注意保暖。🧣' };
+    else return { status: 'normal', text: `距离下次 ${daysUntilNext} 天`, tip: '平淡的日子也要记得说我爱你。❤️' };
+  }, [cycle]);
 
   const copyInviteCode = () => {
     navigator.clipboard.writeText(coupleId);
@@ -487,14 +598,14 @@ export default function CoupleApp() {
                 </div>
             </div>
 
-            {/* 新增：微信打卡确认 (带连续天数) */}
+            {/* 微信打卡确认 */}
             <div className="mt-4 bg-white/60 backdrop-blur-lg rounded-2xl p-4 shadow-sm border border-white/40 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className={`p-2.5 rounded-full transition-colors ${hasSaidLove ? 'bg-green-100 text-green-600' : 'bg-pink-100 text-pink-500'}`}>
                   {hasSaidLove ? <CheckCircle2 size={20} /> : <MessageCircle size={20} />}
                 </div>
                 <div className="flex flex-col">
-                  <span className="font-bold text-gray-700 text-sm">{hasSaidLove ? '今天爱意已送达' : '微信发“我爱你”了吗？'}</span>
+                  <span className="font-bold text-gray-700 text-sm">{hasSaidLove ? '今天爱意已送达' : '今天发“我爱你”了吗？'}</span>
                   <div className="flex items-center gap-1 mt-0.5">
                      <span className="text-[10px] text-gray-500">{hasSaidLove ? '真棒！' : '记得去说一声'}</span>
                      {loveStreak > 0 && (
@@ -506,12 +617,7 @@ export default function CoupleApp() {
                 </div>
               </div>
               {!hasSaidLove && (
-                <button 
-                  onClick={handleSayLove}
-                  className="bg-green-500 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-lg shadow-green-200 hover:bg-green-600 active:scale-95 transition"
-                >
-                  确认已发
-                </button>
+                <button onClick={handleSayLove} className="bg-green-500 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-lg shadow-green-200 hover:bg-green-600 active:scale-95 transition">确认已发</button>
               )}
             </div>
 
@@ -519,10 +625,19 @@ export default function CoupleApp() {
                <button onClick={() => setView('memorials')} className="bg-white/60 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-col items-center gap-3 active:scale-95 transition-transform hover:scale-[1.02]">
                   <Gift size={24} className="text-blue-500" /><span className="font-bold text-gray-700">纪念日</span>
                </button>
+               {/* 恋爱相册入口 - 修改位置 */}
+               <button onClick={() => setView('album')} className="bg-white/60 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-col items-center gap-3 active:scale-95 transition-transform hover:scale-[1.02]">
+                  <ImageIcon size={24} className="text-pink-500" /><span className="font-bold text-gray-700">恋爱相册</span>
+               </button>
                <button onClick={() => setView('diary')} className="bg-white/60 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-col items-center gap-3 active:scale-95 transition-transform hover:scale-[1.02]">
                   <PenTool size={24} className="text-orange-500" /><span className="font-bold text-gray-700">日记本</span>
                </button>
+               {/* 愿望清单入口 */}
+               <button onClick={() => setView('wishlist')} className="bg-gradient-to-r from-violet-100 to-purple-100 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-col items-center gap-3 active:scale-95 transition-transform hover:scale-[1.02]">
+                  <ListTodo size={24} className="text-purple-600" /><span className="font-bold text-gray-700">愿望清单</span>
+               </button>
             </div>
+            
             <div onClick={copyInviteCode} className="mt-6 bg-gray-900/5 backdrop-blur-sm rounded-xl p-4 flex items-center justify-between cursor-pointer active:bg-gray-900/10 transition">
               <div className="flex items-center gap-3"><Copy size={14} /><span className="font-mono font-bold text-gray-800">{coupleId}</span></div>
               <span className="text-xs font-bold text-pink-500">点击复制配对码</span>
@@ -530,7 +645,6 @@ export default function CoupleApp() {
           </div>
         )}
 
-        {/* ... memorials, diary, settings views ... */}
         {view === 'memorials' && (
            <div className="space-y-4 animate-fade-in">
               <div className="flex justify-between items-center mb-2">
@@ -550,6 +664,40 @@ export default function CoupleApp() {
                     </div>
                   );
               })}
+           </div>
+        )}
+
+        {/* 恋爱相册页面 */}
+        {view === 'album' && (
+           <div className="space-y-4 animate-fade-in pb-20">
+              <div className="flex justify-between items-center mb-2">
+                  <h2 className="text-2xl font-bold text-gray-800">甜蜜瞬间</h2>
+                  <label className={`text-sm bg-blue-500 text-white px-4 py-2 rounded-xl font-bold shadow-lg shadow-blue-200 active:scale-95 transition flex items-center gap-1 cursor-pointer ${isUploading ? 'opacity-50' : ''}`}>
+                     <Camera size={16} /> 
+                     上传
+                     <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileSelect} disabled={isUploading} />
+                  </label>
+              </div>
+              
+              <div className="columns-2 gap-3 space-y-3">
+                 {photos.map(p => (
+                    <div key={p.id} className="break-inside-avoid bg-white p-2 rounded-2xl shadow-sm border border-gray-100 relative group mb-3">
+                       <img src={p.url} alt="love" className="w-full rounded-xl object-cover" />
+                       <div className="px-1 mt-2">
+                          <p className="text-xs font-medium text-gray-700 mb-1 break-words">{p.caption}</p>
+                          <div className="flex justify-between items-center mt-2">
+                             <span className="text-[10px] text-gray-400">{new Date(p.createdAt).toLocaleDateString()}</span>
+                             
+                             {/* 修复：增大点击区域和图标大小 */}
+                             <button onClick={() => deletePhoto(p.id)} className="p-2 -mr-2 text-gray-300 hover:text-red-400 active:scale-95 transition">
+                                <Trash2 size={16}/>
+                             </button>
+                          </div>
+                       </div>
+                    </div>
+                 ))}
+              </div>
+              {photos.length === 0 && <div className="text-center py-20 text-gray-400">还没有照片，快传一张吧~</div>}
            </div>
         )}
 
@@ -573,13 +721,135 @@ export default function CoupleApp() {
             </div>
         )}
 
+        {view === 'wishlist' && (
+          <div className="space-y-6 animate-fade-in">
+             <h2 className="text-2xl font-bold text-gray-800">愿望清单</h2>
+             
+             {/* 输入框 */}
+             <div className="bg-white/70 backdrop-blur-xl rounded-2xl p-2 pl-4 shadow-sm border border-white/50 flex items-center gap-2">
+               <input 
+                 className="flex-1 bg-transparent outline-none text-gray-700 py-2" 
+                 placeholder="例如：一起去迪士尼..." 
+                 value={newWishText}
+                 onChange={e => setNewWishText(e.target.value)}
+                 onKeyDown={e => e.key === 'Enter' && addWish()}
+               />
+               <button onClick={addWish} className="bg-purple-500 text-white p-3 rounded-xl font-bold shadow-md hover:bg-purple-600 transition active:scale-95">添加</button>
+             </div>
+
+             <div className="space-y-3">
+               {wishes.length === 0 && <div className="text-center py-10 text-gray-400">添加你们的第一个共同愿望吧</div>}
+               {wishes.map(w => (
+                 <div key={w.id} className={`group flex items-center gap-3 p-4 rounded-2xl border transition-all duration-300 ${w.completed ? 'bg-gray-100/50 border-transparent opacity-60' : 'bg-white/80 backdrop-blur-md border-white/50 shadow-sm'}`}>
+                    <button 
+                      onClick={() => toggleWish(w.id, w.completed)}
+                      className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${w.completed ? 'bg-purple-400 border-purple-400 text-white' : 'border-gray-300 text-transparent hover:border-purple-300'}`}
+                    >
+                      <CheckSquare size={14} />
+                    </button>
+                    <span className={`flex-1 font-medium transition-all ${w.completed ? 'text-gray-400 line-through decoration-2 decoration-purple-300' : 'text-gray-700'}`}>
+                      {w.text}
+                    </span>
+                    <button onClick={() => deleteWish(w.id)} className="text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition"><Trash2 size={16} /></button>
+                 </div>
+               ))}
+             </div>
+          </div>
+        )}
+
+        {/* 生理期助手页面 */}
+        {view === 'cycle' && (
+          <div className="space-y-6 animate-fade-in">
+             <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+               <Droplet className="fill-rose-400 text-rose-400" /> 生理期助手
+             </h2>
+             
+             {/* 状态大圆环 */}
+             <div className="flex flex-col items-center justify-center py-8">
+                <div className={`w-64 h-64 rounded-full flex flex-col items-center justify-center border-8 shadow-2xl relative transition-all duration-500
+                  ${cycleStatus.status === 'period' ? 'border-rose-300 bg-rose-50' : 
+                    cycleStatus.status === 'soon' ? 'border-orange-200 bg-orange-50' : 
+                    'border-green-100 bg-green-50'}`}>
+                    
+                    <span className="text-4xl font-black text-gray-800 mb-2">{cycleStatus.text}</span>
+                    <span className="text-sm font-medium text-gray-500 px-8 text-center">{cycleStatus.tip}</span>
+                    
+                    {cycleStatus.status === 'period' && (
+                      <div className="absolute -bottom-4 bg-rose-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg animate-bounce">
+                        特殊时期
+                      </div>
+                    )}
+                </div>
+             </div>
+
+             {/* 设置卡片 */}
+             <div className="bg-white/70 backdrop-blur-xl rounded-3xl p-6 shadow-lg border border-white/50 space-y-4">
+                <h3 className="font-bold text-gray-700 text-sm flex items-center gap-2">
+                  <Thermometer size={16} /> 记录与设置
+                </h3>
+                
+                <div>
+                   <label className="block text-xs font-bold text-gray-400 uppercase mb-2">上次经期开始日</label>
+                   <input 
+                     className="w-full bg-white/50 border border-gray-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-rose-300" 
+                     type="date" 
+                     defaultValue={cycle.lastDate}
+                     onChange={(e) => updateCycle(e.target.value, cycle.cycleDays)}
+                   />
+                </div>
+                
+                <div>
+                   <label className="block text-xs font-bold text-gray-400 uppercase mb-2">平均周期 (天)</label>
+                   <input 
+                     className="w-full bg-white/50 border border-gray-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-rose-300" 
+                     type="number" 
+                     defaultValue={cycle.cycleDays}
+                     onBlur={(e) => updateCycle(cycle.lastDate, Number(e.target.value))}
+                   />
+                </div>
+                <p className="text-xs text-gray-400 mt-2">* 记录后，系统会自动推算下次日期并提示。</p>
+             </div>
+          </div>
+        )}
+
         {view === 'settings' && (
           <div className="space-y-6 animate-fade-in">
              <h2 className="text-2xl font-bold text-gray-800">设置</h2>
+             
+             {/* 手机安装入口 */}
+             <button 
+                onClick={() => setShowInstallGuide(true)}
+                className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+             >
+                <Smartphone size={20} />
+                安装到手机桌面 (推荐)
+             </button>
+
              <div className="bg-white/70 backdrop-blur-xl rounded-3xl p-6 shadow-lg border border-white/50 space-y-4">
-                <div><label className="block text-xs font-bold text-gray-400 uppercase mb-2">我们的称呼</label><input className="w-full bg-white/50 border border-gray-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-pink-300" defaultValue={settings.names} id="set-names" /></div>
-                <div><label className="block text-xs font-bold text-gray-400 uppercase mb-2">在一起的日子</label><input className="w-full bg-white/50 border border-gray-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-pink-300" type="date" defaultValue={settings.startDate} id="set-date" /></div>
-                <div><label className="block text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-1"><ImageIcon size={12}/> 背景图片链接</label><input className="w-full bg-white/50 border border-gray-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-pink-300" defaultValue={settings.bgImage} id="set-bg" placeholder="https://..." /></div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase mb-2">我们的称呼</label>
+                    {/* 修复：添加 key 属性以确保从数据库同步最新值 */}
+                    <input className="w-full bg-white/50 border border-gray-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-pink-300" 
+                           defaultValue={settings.names} 
+                           key={settings.names} 
+                           id="set-names" />
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase mb-2">在一起的日子</label>
+                    <input className="w-full bg-white/50 border border-gray-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-pink-300" 
+                           type="date" 
+                           defaultValue={settings.startDate} 
+                           key={settings.startDate} 
+                           id="set-date" />
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-1"><ImageIcon size={12}/> 背景图片链接</label>
+                    <input className="w-full bg-white/50 border border-gray-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-pink-300" 
+                           defaultValue={settings.bgImage} 
+                           key={settings.bgImage} 
+                           id="set-bg" 
+                           placeholder="https://..." />
+                </div>
                 <button onClick={() => updateSettings((document.getElementById('set-names') as any).value, (document.getElementById('set-date') as any).value, (document.getElementById('set-bg') as any).value)} className="w-full bg-gray-800 text-white font-bold py-3 rounded-xl mt-2 active:scale-95 transition">保存设置</button>
              </div>
              <button onClick={handleLogout} className="w-full py-4 text-red-400 font-bold text-sm hover:bg-red-50 rounded-2xl transition"><LogOut size={16} className="inline mr-1" /> 退出登录</button>
@@ -589,9 +859,30 @@ export default function CoupleApp() {
 
       <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-white/80 backdrop-blur-xl border border-white/40 p-1.5 rounded-full flex shadow-2xl shadow-gray-200/50 z-50">
           <NavButton active={view === 'home'} onClick={() => setView('home')} icon={<Heart />} />
-          <NavButton active={view === 'memorials'} onClick={() => setView('memorials')} icon={<Gift />} />
+          <NavButton active={view === 'album'} onClick={() => setView('album')} icon={<ImageIcon />} />
           <NavButton active={view === 'diary'} onClick={() => setView('diary')} icon={<PenTool />} />
+          <NavButton active={view === 'wishlist'} onClick={() => setView('wishlist')} icon={<ListTodo />} />
+          <NavButton active={view === 'cycle'} onClick={() => setView('cycle')} icon={<Droplet />} />
       </div>
+
+      {/* 安装指南弹窗 */}
+      {showInstallGuide && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6 backdrop-blur-sm animate-fade-in" onClick={() => setShowInstallGuide(false)}>
+            <div className="bg-white w-full max-w-sm rounded-[2rem] p-8 shadow-2xl animate-pop-in" onClick={e => e.stopPropagation()}>
+                <h3 className="font-bold text-xl mb-4 text-gray-800 flex items-center gap-2"><Smartphone size={24} className="text-blue-500"/> 安装教程</h3>
+                <div className="space-y-4 text-sm text-gray-600 leading-relaxed">
+                   <p className="font-bold text-gray-800">📱 iPhone (Safari):</p>
+                   <p>1. 点击底部中间的 <span className="font-bold text-blue-500"><Share size={12} className="inline"/> 分享按钮</span>。</p>
+                   <p>2. 下滑找到并点击 <span className="font-bold">"添加到主屏幕"</span>。</p>
+                   <div className="h-px bg-gray-100 my-2"></div>
+                   <p className="font-bold text-gray-800">🤖 Android (Chrome):</p>
+                   <p>1. 点击右上角的 <span className="font-bold">... 菜单</span>。</p>
+                   <p>2. 点击 <span className="font-bold">"安装应用"</span> 或 <span className="font-bold">"添加到主屏幕"</span>。</p>
+                </div>
+                <button onClick={() => setShowInstallGuide(false)} className="w-full mt-6 py-3.5 bg-gray-900 rounded-xl font-bold text-white hover:bg-black transition">知道了</button>
+            </div>
+        </div>
+      )}
 
       {showAddMem && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6 backdrop-blur-sm animate-fade-in">
@@ -622,6 +913,34 @@ export default function CoupleApp() {
             </div>
         </div>
       )}
+
+      {/* 新增：照片上传弹窗 */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-pop-in">
+                <h3 className="font-bold text-lg mb-4 text-gray-800">上传照片</h3>
+                
+                <div className="aspect-square w-full bg-gray-100 rounded-xl mb-4 overflow-hidden shadow-inner">
+                    {previewUrl && <img src={previewUrl} className="w-full h-full object-cover" />}
+                </div>
+
+                <input 
+                  className="w-full bg-gray-50 rounded-xl p-3 mb-4 outline-none focus:ring-2 focus:ring-pink-200 text-sm"
+                  placeholder="写一句描述吧... (可选)"
+                  value={uploadCaption}
+                  onChange={e => setUploadCaption(e.target.value)}
+                />
+
+                <div className="flex gap-3">
+                    <button onClick={cancelUpload} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold text-gray-500 hover:bg-gray-200 transition text-sm">取消</button>
+                    <button onClick={confirmUpload} disabled={isUploading} className="flex-1 py-3 bg-pink-500 rounded-xl font-bold text-white hover:bg-pink-600 transition shadow-lg shadow-pink-200 text-sm flex items-center justify-center gap-2">
+                        {isUploading ? <RefreshCw className="animate-spin" size={16}/> : '发布'}
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
     </div>
   );
 }
