@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame, ListTodo, CheckSquare, Trash2, Droplet, Thermometer, Smartphone, Share, Camera, Calendar, ChevronLeft, ChevronRight, Clock, User
+  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame, ListTodo, CheckSquare, Trash2, Droplet, Thermometer, Smartphone, Share, Camera, Calendar, ChevronLeft, ChevronRight, Clock
 } from 'lucide-react';
 
 // ======================================================================
@@ -16,10 +16,7 @@ import AV from 'leancloud-storage';
 // --- 配置区域 (请确保这些 Key 是您自己的 LeanCloud 应用 Key) ---
 const LC_APP_ID = "3z3uky7oBaOs2hFDXqXcxJbF-MdYXbMMI";
 const LC_APP_KEY = "9pGRzGBqLM5ihqXGhHdSrjY5";
-
 // ⚠️ 核心修改：使用 Vercel 代理绕过跨域限制
-// 原来的地址: "https://3z3uky7o.api.lncldglobal.com"
-// 修改后的地址: "/api" (配合 vercel.json 使用)
 const LC_SERVER_URL = "/api"; 
 
 
@@ -1127,32 +1124,6 @@ export default function CoupleApp() {
                 <div className="flex gap-3">
                     <button onClick={() => setShowAddDiary(false)} className="flex-1 py-3.5 bg-gray-100 rounded-xl font-bold text-gray-500 hover:bg-gray-200 transition">取消</button>
                     <button onClick={saveDiary} className="flex-1 py-3.5 bg-pink-500 rounded-xl font-bold text-white hover:bg-pink-600 transition shadow-lg shadow-pink-200">发布</button>
-                </div>
-            </div>
-        </div>
-      )}
-
-      {/* 新增：添加日程弹窗 */}
-      {showAddSchedule && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white w-full max-w-sm rounded-[2rem] p-8 shadow-2xl animate-pop-in">
-                <h3 className="font-bold text-xl mb-2 text-gray-800 text-center">添加日程</h3>
-                <p className="text-center text-sm text-gray-400 mb-6">{selectedDate}</p>
-                
-                <div className="space-y-3 mb-6">
-                    <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase mb-1">标题</label>
-                        <input className="w-full bg-gray-50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-200" placeholder="例如: 看电影" value={newScheduleTitle} onChange={e=>setNewScheduleTitle(e.target.value)} />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase mb-1">时间 (选填)</label>
-                        <input type="time" className="w-full bg-gray-50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-200" value={newScheduleTime} onChange={e=>setNewScheduleTime(e.target.value)} />
-                    </div>
-                </div>
-
-                <div className="flex gap-3">
-                    <button onClick={() => setShowAddSchedule(false)} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold text-gray-500 hover:bg-gray-200 transition">取消</button>
-                    <button onClick={addSchedule} className="flex-1 py-3 bg-blue-500 rounded-xl font-bold text-white hover:bg-blue-600 transition shadow-lg shadow-blue-200">保存</button>
                 </div>
             </div>
         </div>
