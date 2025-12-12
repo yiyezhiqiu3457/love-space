@@ -175,7 +175,7 @@ export default function CoupleApp() {
   const [shredText, setShredText] = useState('');
   const [isShredding, setIsShredding] = useState(false);
   const [shredPhase, setShredPhase] = useState<'idle' | 'prep' | 'in' | 'fall'>('idle');
-  const [strips, setStrips] = useState<number>(24);
+  const [strips] = useState<number>(24);
   const paperRef = useRef<HTMLDivElement>(null);
   const [paperSize, setPaperSize] = useState<{width: number; height: number}>({ width: 192, height: 80 });
   const [shredProgress, setShredProgress] = useState(0); // 0~1 进度
@@ -1169,10 +1169,9 @@ export default function CoupleApp() {
                     const delay = param.delay;
                     const rotate = param.rot;
                     const baseH = paperSize.height || 96;
-                    // 优化：根据不同阶段计算合适的高度，确保动画衔接流畅
-                    const cutHeight = shredPhase === 'in'
-                      ? baseH // 进纸阶段显示完整纸张高度，确保连续显示
-                      : Math.max(shredProgress > 0 ? 6 : 0, Math.min(baseH * shredProgress, 220)); // 下落阶段保持原有逻辑
+                    // 修复：确保进纸阶段穿过碎纸机的长度随shredProgress逐渐增加
+                    // 所有阶段都让高度随shredProgress逐渐增加，确保穿过碎纸机的长度动态变化
+                    const cutHeight = Math.max(6, Math.min(baseH * shredProgress, 220));
                     return (
                       <div
                         key={i}
@@ -1182,7 +1181,6 @@ export default function CoupleApp() {
                           left: `${leftOffset}px`,
                           width: `${Math.max(1, sliceW - 1)}px`,
                           height: `${cutHeight}px`,
-                          boxShadow: cutHeight > 0 ? '0 8px 18px rgba(0,0,0,0.22)' : 'none',
                           // 优化动画过渡，增加弹性效果
                           transform: shredPhase === 'fall'
                             ? `translateY(260px) rotate(${rotate}deg) translateX(${(param.x * 1.2).toFixed(2)}px)`
@@ -1195,6 +1193,7 @@ export default function CoupleApp() {
                           opacity: shredPhase === 'fall' ? 0 : Math.min(1, Math.max(0.5, shredProgress * 1.5)),
                           borderTop: '1px solid rgba(236,72,153,0.35)',
                           boxShadow: `${cutHeight > 0 ? '0 8px 18px rgba(0,0,0,0.22)' : 'none'}, inset 0 1px 0 rgba(255,255,255,0.6)`,
+
                           background: 'linear-gradient(180deg,rgba(255,240,245,1),rgba(255,228,235,1))'
                         }}
                       >
@@ -1204,8 +1203,8 @@ export default function CoupleApp() {
                             width: `${paperSize.width}px`,
                             transform: `translateX(-${sliceW * i}px)`,
                             height: `${baseH}px`,
-                            // 优化位置调整，确保完整显示穿过碎纸机的部分
-                            marginTop: shredPhase === 'in' ? `-${baseH - (baseH * shredProgress)}px` : `-${baseH - cutHeight}px`,
+                            // 修复：统一位置调整逻辑，确保显示正确的纸张部分
+                            marginTop: `-${baseH - cutHeight}px`,
                             whiteSpace: 'pre-wrap',
                             wordBreak: 'break-word',
                             overflowWrap: 'break-word',
