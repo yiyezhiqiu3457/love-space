@@ -171,6 +171,9 @@ export default function CoupleApp() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadCaption, setUploadCaption] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
+  // 照片放大查看相关状态
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
 
   const [shredText, setShredText] = useState('');
   const [isShredding, setIsShredding] = useState(false);
@@ -956,14 +959,28 @@ export default function CoupleApp() {
               <div className="columns-2 gap-3 space-y-3">
                  {photos.map(p => (
                     <div key={p.id} className="break-inside-avoid bg-white p-2 rounded-2xl shadow-sm border border-gray-100 relative group mb-3">
-                       <img src={p.url} alt="love" className="w-full rounded-xl object-cover" />
+                       <img 
+                         src={p.url} 
+                         alt="love" 
+                         className="w-full rounded-xl object-cover cursor-pointer hover:opacity-90 transition-opacity" 
+                         onClick={() => {
+                           setSelectedPhoto(p.url);
+                           setShowPhotoModal(true);
+                         }}
+                       />
                        <div className="px-1 mt-2">
                           <p className="text-xs font-medium text-gray-700 mb-1 break-words">{p.caption}</p>
                           <div className="flex justify-between items-center mt-2">
                              <span className="text-[10px] text-gray-400">{new Date(p.createdAt).toLocaleDateString()}</span>
                              
                              {/* 修复：增大点击区域和图标大小 */}
-                             <button onClick={() => deletePhoto(p.id)} className="p-2 -mr-2 text-gray-300 hover:text-red-400 active:scale-95 transition">
+                             <button 
+                               onClick={(e) => {
+                                 e.stopPropagation(); // 防止触发照片点击事件
+                                 deletePhoto(p.id);
+                               }} 
+                               className="p-2 -mr-2 text-gray-300 hover:text-red-400 active:scale-95 transition"
+                             >
                                 <Trash2 size={16}/>
                              </button>
                           </div>
@@ -971,6 +988,26 @@ export default function CoupleApp() {
                     </div>
                  ))}
               </div>
+              
+              {/* 照片放大查看模态框 */}
+              {showPhotoModal && selectedPhoto && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
+                  <button 
+                    onClick={() => setShowPhotoModal(false)}
+                    className="absolute top-4 right-4 p-3 text-white hover:bg-white/20 rounded-full transition-colors"
+                  >
+                    <X size={24} />
+                  </button>
+                  <div className="max-w-full max-h-full overflow-auto">
+                    <img 
+                      src={selectedPhoto} 
+                      alt="放大查看" 
+                      className="max-w-full max-h-[90vh] object-contain"
+                      onClick={() => setShowPhotoModal(false)} // 点击图片也关闭
+                    />
+                  </div>
+                </div>
+              )}
               {photos.length === 0 && <div className="text-center py-20 text-gray-400">还没有照片，快传一张吧~</div>}
            </div>
         )}
@@ -1063,7 +1100,7 @@ export default function CoupleApp() {
                       prepRaf.current = requestAnimationFrame(prepStep);
                     } else {
                       // 进入进纸阶段前，增加短暂停顿以增强仪式感
-                      const hold = 150; // ms
+                      const hold = 50; // ms (已减短停顿时间)
                       setTimeout(() => {
                         setShredPhase('in');
                         setShredProgress(0);
