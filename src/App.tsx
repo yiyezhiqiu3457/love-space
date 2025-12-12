@@ -126,7 +126,7 @@ const LoginScreen = ({ onJoin, onCreate }: { onJoin: (id: string, name: string) 
 
 // --- 主应用 ---
 export default function CoupleApp() {
-  const [view, setView] = useState<'home' | 'memorials' | 'album' | 'diary' | 'wishlist' | 'cycle' | 'settings' | 'schedule'>('home'); 
+  const [view, setView] = useState<'home' | 'memorials' | 'album' | 'diary' | 'wishlist' | 'cycle' | 'settings' | 'schedule' | 'shredder'>('home'); 
   const [coupleId, setCoupleId] = useState<string>('');
   const [userName, setUserName] = useState('');
   const [isEntered, setIsEntered] = useState(false);
@@ -171,6 +171,62 @@ export default function CoupleApp() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadCaption, setUploadCaption] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
+
+  const [shredText, setShredText] = useState('');
+  const [isShredding, setIsShredding] = useState(false);
+  const [shredPhase, setShredPhase] = useState<'idle' | 'prep' | 'in' | 'fall'>('idle');
+  const [strips, setStrips] = useState<number>(24);
+  const paperRef = useRef<HTMLDivElement>(null);
+  const [paperSize, setPaperSize] = useState<{width: number; height: number}>({ width: 192, height: 80 });
+  const [shredProgress, setShredProgress] = useState(0); // 0~1 进度
+  const shredRaf = useRef<number | null>(null);
+  const prepRaf = useRef<number | null>(null);
+  const [preOffset, setPreOffset] = useState(0);
+  const shredderRef = useRef<HTMLDivElement>(null);
+  const bladeRef = useRef<HTMLDivElement>(null);
+  const [bladeOffset, setBladeOffset] = useState<number>(56);
+  const [stripParams, setStripParams] = useState<Array<{ rot: number; x: number; delay: number }>>([]);
+  // 根据当前布局动态计算进纸总位移，使进纸结束时整纸下缘刚好到达刀口
+  const feedDistance = useMemo(() => {
+    const base = 20; // 与样式中的初始 translateY(+20) 保持一致
+    const paperH = paperSize.height || 96;
+    return Math.max(0, bladeOffset - (base + paperH));
+  }, [bladeOffset, paperSize.height]);
+
+  useEffect(() => {
+    if (paperRef.current) {
+      const el = paperRef.current as HTMLDivElement;
+      setPaperSize({ width: el.offsetWidth, height: el.offsetHeight });
+    }
+  }, [shredText, strips]);
+
+  // 确保进入页面或窗口尺寸变化时能正确测量纸张尺寸
+  useEffect(() => {
+    const measure = () => {
+      if (paperRef.current) {
+        const el = paperRef.current as HTMLDivElement;
+        const w = el.offsetWidth || 192;
+        const h = el.offsetHeight || 96;
+        setPaperSize({ width: w, height: h });
+      }
+      if (shredderRef.current && bladeRef.current) {
+        const cont = shredderRef.current.getBoundingClientRect();
+        const blade = bladeRef.current.getBoundingClientRect();
+        const offset = Math.max(0, Math.round((blade.top + blade.height - cont.top) + 8));
+        setBladeOffset(offset);
+      }
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (shredRaf.current) cancelAnimationFrame(shredRaf.current);
+      if (prepRaf.current) cancelAnimationFrame(prepRaf.current as number);
+    };
+  }, []);
 
   // 错误提示辅助函数
   const showErrorAlert = (action: string, error: any) => {
@@ -767,6 +823,9 @@ export default function CoupleApp() {
                <button onClick={() => setView('wishlist')} className="bg-white/60 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-col items-center gap-3 active:scale-95 transition-transform hover:scale-[1.02]">
                   <ListTodo size={24} className="text-purple-600" /><span className="font-bold text-gray-700">愿望清单</span>
                </button>
+               <button onClick={() => setView('shredder')} className="bg-white/60 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-col items-center gap-3 active:scale-95 transition-transform hover:scale-[1.02]">
+                  <Trash2 size={24} className="text-gray-700" /><span className="font-bold text-gray-700">坏情绪粉碎机</span>
+               </button>
             </div>
             
             <div onClick={copyInviteCode} className="mt-6 bg-gray-900/5 backdrop-blur-sm rounded-xl p-4 flex items-center justify-between cursor-pointer active:bg-gray-900/10 transition">
@@ -969,6 +1028,199 @@ export default function CoupleApp() {
                  </div>
                ))}
              </div>
+          </div>
+        )}
+
+        {view === 'shredder' && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-2xl font-bold text-gray-800">坏情绪粉碎机</h2>
+              <button onClick={() => setView('home')} className="text-sm bg-gray-900 text-white px-4 py-2 rounded-xl font-bold shadow-sm active:scale-95 transition">返回</button>
+            </div>
+            <div className="bg-white/70 backdrop-blur-xl rounded-3xl p-6 shadow-lg border border-white/50 space-y-4">
+              <textarea 
+                className="w-full bg-gray-50 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-pink-200 min-h-[120px] resize-none"
+                placeholder="把坏情绪写下来，让我来帮你粉碎它..."
+                value={shredText}
+                onChange={e => setShredText(e.target.value)}
+              />
+              <button 
+                disabled={!shredText.trim() || isShredding}
+                onClick={() => {
+                  if (!shredText.trim()) return;
+                  if (isShredding) return;
+                  setIsShredding(true);
+                  // 预备：先略微后退再进入
+                  setShredPhase('prep');
+                  setPreOffset(-32);
+                  const prepDuration = 1100;
+                  const prepStart = performance.now();
+                  const prepStep = (now: number) => {
+                    const t = Math.min(1, (now - prepStart) / prepDuration);
+                    const eased = 1 - Math.pow(1 - t, 2); // ease-out
+                    setPreOffset(-32 + 32 * eased); // -32 -> 0
+                    if (t < 1) {
+                      prepRaf.current = requestAnimationFrame(prepStep);
+                    } else {
+                      // 进入进纸阶段前，增加短暂停顿以增强仪式感
+                      const hold = 150; // ms
+                      setTimeout(() => {
+                        setShredPhase('in');
+                        setShredProgress(0);
+                      // 初始化每条纸片的随机落下参数（旋转、水平漂移、延迟）
+                      const params = Array.from({ length: strips }).map((_, idx) => {
+                        const edge = Math.abs((idx / Math.max(1, strips - 1)) * 2 - 1);
+                        const rot = (Math.random() - 0.5) * 40 + edge * 4;
+                        const x = (Math.random() - 0.5) * 30 * (1 + edge * 0.3);
+                        const delay = Math.random() * 0.5;
+                        return { rot, x, delay };
+                      });
+                      setStripParams(params);
+                      const duration = 2200;
+                      const start = performance.now();
+                      const step = (now2: number) => {
+                        const p = Math.min(1, (now2 - start) / duration);
+                        setShredProgress(p);
+                        if (p < 1) {
+                          shredRaf.current = requestAnimationFrame(step);
+                        } else {
+                          // 进入落条阶段
+                          setShredPhase('fall');
+                          // 落条动画结束后复位
+                          setTimeout(() => {
+                            setIsShredding(false);
+                            setShredPhase('idle');
+                            setShredProgress(0);
+                            setPreOffset(0);
+                            setShredText('');
+                          }, 1800);
+                        }
+                      };
+                      shredRaf.current = requestAnimationFrame(step);
+                      }, hold);
+                    }
+                  };
+                  prepRaf.current = requestAnimationFrame(prepStep);
+                }}
+                className={`w-full ${(!shredText.trim() || isShredding) ? 'bg-gray-200 text-gray-500' : 'bg-pink-500 text-white'} font-bold py-3 rounded-xl shadow-md active:scale-95 transition`}
+              >开始粉碎</button>
+            </div>
+
+            {/* 向下移动碎纸机位置 */}
+            <div className="relative h-80 mt-[45vh] bg-gradient-to-b from-violet-50 to-purple-100 backdrop-blur-xl rounded-3xl border border-white/50 shadow-inner overflow-hidden flex items-start justify-center">
+              {/* 向下移动刀口位置 */}
+              <div
+                className="absolute top-[2.75rem] w-[448px] h-5 rounded-sm shadow-md"
+                style={{
+                  background: 'linear-gradient(180deg,#c4b5fd,#a78bfa)',
+                  boxShadow: 'inset 0 1px 2px rgba(255,255,255,0.7), inset 0 -1px 2px rgba(167,139,250,0.45)',
+                  zIndex: 30,
+                }}
+              />
+              <div className="absolute top-0 w-full h-10"
+                   style={{
+                     background: 'linear-gradient(180deg, rgba(139,92,246,0.12), rgba(139,92,246,0.04))',
+                     zIndex: 25,
+                   }}></div>
+              {/* 向下移动阴影过渡位置 */}
+              <div
+                className="absolute top-[3.1rem] w-[448px] h-2 rounded-sm"
+                style={{
+                  background: 'linear-gradient(180deg, rgba(139,92,246,0.22), rgba(139,92,246,0))',
+                  zIndex: 26,
+                }}
+              />
+
+              {/* 优化整纸显示容器 */}
+              <div className="absolute w-[448px]" style={{ top: 0, height: (shredPhase === 'in' || shredPhase === 'prep') ? bladeOffset : '100%', overflow: (shredPhase === 'in' || shredPhase === 'prep') ? 'hidden' : 'visible', zIndex: (shredPhase === 'idle') ? 40 : 5 }}>
+                <div 
+                  ref={paperRef}
+                  className="mx-auto bg-rose-50 shadow-[0_6px_14px_rgba(236,72,153,0.18)] rounded-md border border-rose-200 text-rose-700 text-sm p-3 text-center"
+                  style={{
+                    width: '15rem',
+                    backgroundImage: 'linear-gradient(180deg,rgba(255,240,245,1),rgba(255,228,235,1))',
+                    transform: `translateY(${Math.round(20 + preOffset + shredProgress * feedDistance)}px)`,
+                    // 增加平滑过渡动画
+                    transition: 'transform 0.1s ease-out',
+                    // in 阶段显示整纸，但被刀口裁剪；fall 阶段隐藏整纸
+                    opacity: shredPhase === 'fall' ? 0 : 1,
+                    position: 'relative',
+                    zIndex: shredPhase === 'idle' ? 40 : 5,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    overflowWrap: 'break-word',
+                    maxWidth: '34ch',
+                    margin: '0 auto',
+                  }}
+                >
+                  {shredText || ' '}
+                </div>
+              </div>
+
+              {/* 优化纸片条容器，确保动画衔接流畅 */}
+              {(shredPhase === 'in' || shredPhase === 'fall') && (
+                <div className="absolute w-[448px]" style={{ pointerEvents: 'none', zIndex: 10, top: bladeOffset, height: `calc(100% - ${bladeOffset}px)`, overflow: 'hidden' }}>
+                  {Array.from({ length: strips }).map((_, i) => {
+                    const sliceW = paperSize.width / strips;
+                    const containerW = 448; // w-[448px]
+                    const gutter = Math.max(0, (containerW - paperSize.width) / 2);
+                    const leftOffset = gutter + sliceW * i;
+                    const param = stripParams[i] || { rot: (i % 2 === 0 ? 10 : -10), x: 0, delay: (i % 5) * 0.05 };
+                    const delay = param.delay;
+                    const rotate = param.rot;
+                    const baseH = paperSize.height || 96;
+                    // 优化：根据不同阶段计算合适的高度，确保动画衔接流畅
+                    const cutHeight = shredPhase === 'in'
+                      ? baseH // 进纸阶段显示完整纸张高度，确保连续显示
+                      : Math.max(shredProgress > 0 ? 6 : 0, Math.min(baseH * shredProgress, 220)); // 下落阶段保持原有逻辑
+                    return (
+                      <div
+                        key={i}
+                        className="absolute overflow-hidden rounded-[2px] border border-rose-300 bg-rose-50"
+                        style={{
+                          top: 0,
+                          left: `${leftOffset}px`,
+                          width: `${Math.max(1, sliceW - 1)}px`,
+                          height: `${cutHeight}px`,
+                          boxShadow: cutHeight > 0 ? '0 8px 18px rgba(0,0,0,0.22)' : 'none',
+                          // 优化动画过渡，增加弹性效果
+                          transform: shredPhase === 'fall'
+                            ? `translateY(260px) rotate(${rotate}deg) translateX(${(param.x * 1.2).toFixed(2)}px)`
+                            : `translateY(${(Math.sin((shredProgress * 6.283 * 0.5 + i) * 0.8) * 2.0).toFixed(2)}px) translateX(${(Math.sin((shredProgress * 6.283 + i) * 1.0) * 3 + param.x * Math.min(1, shredProgress * 1.2) * 0.4).toFixed(2)}px) skewY(${((i % 2 === 0 ? 1 : -1) * 1.5).toFixed(2)}deg)`,
+                          // 优化过渡效果，使动画更流畅
+                          transition: shredPhase === 'fall'
+                            ? `transform 1.8s ease-in ${delay}s, opacity 1.8s ease-in ${delay}s`
+                            : 'height 0.05s ease, transform 0.1s ease-out, opacity 0.1s ease-out',
+                          // 优化透明度过渡，使纸片条逐渐出现
+                          opacity: shredPhase === 'fall' ? 0 : Math.min(1, Math.max(0.5, shredProgress * 1.5)),
+                          borderTop: '1px solid rgba(236,72,153,0.35)',
+                          boxShadow: `${cutHeight > 0 ? '0 8px 18px rgba(0,0,0,0.22)' : 'none'}, inset 0 1px 0 rgba(255,255,255,0.6)`,
+                          background: 'linear-gradient(180deg,rgba(255,240,245,1),rgba(255,228,235,1))'
+                        }}
+                      >
+                        <div
+                          className="text-rose-800 text-sm p-3 text-center"
+                          style={{
+                            width: `${paperSize.width}px`,
+                            transform: `translateX(-${sliceW * i}px)`,
+                            height: `${baseH}px`,
+                            // 优化位置调整，确保完整显示穿过碎纸机的部分
+                            marginTop: shredPhase === 'in' ? `-${baseH - (baseH * shredProgress)}px` : `-${baseH - cutHeight}px`,
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            overflowWrap: 'break-word',
+                            maxWidth: '34ch',
+                            margin: '0 auto',
+                          }}
+                        >
+                          {shredText || ' '}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
