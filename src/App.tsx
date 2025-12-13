@@ -191,9 +191,11 @@ export default function CoupleApp() {
   const [stripParams, setStripParams] = useState<Array<{ rot: number; x: number; delay: number }>>([]);
   // 根据当前布局动态计算进纸总位移，使进纸结束时整纸下缘刚好到达刀口
   const feedDistance = useMemo(() => {
-    const base = 20; // 与样式中的初始 translateY(+20) 保持一致
-    const paperH = paperSize.height || 96;
-    return Math.max(0, bladeOffset - (base + paperH));
+    const base = 0; // 纸条现在与刀口下端对齐，不需要初始偏移
+    const paperH = paperSize.height || 120;
+    // 刀口高度为24px (h-6)，所以需要将bladeOffset加上刀口高度来计算进纸距离
+    const bladeBottom = bladeOffset + 24;
+    return Math.max(0, bladeBottom - (base + paperH));
   }, [bladeOffset, paperSize.height]);
 
   useEffect(() => {
@@ -1142,72 +1144,75 @@ export default function CoupleApp() {
               >开始粉碎</button>
             </div>
 
-            {/* 向下移动碎纸机位置 */}
-            <div className="relative h-80 mt-[45vh] bg-gradient-to-b from-violet-50 to-purple-100 backdrop-blur-xl rounded-3xl border border-white/50 shadow-inner overflow-hidden flex items-start justify-center">
-              {/* 向下移动刀口位置 */}
+            {/* 向下移动碎纸机位置 - 增大尺寸并调整位置到容器四分之一处 */}
+            <div className="relative h-[55vh] mt-[25vh] bg-gradient-to-b from-violet-50 to-purple-100 backdrop-blur-xl rounded-3xl border border-white/50 shadow-inner overflow-hidden flex items-start justify-center">
+              {/* 向下移动刀口位置 - 增大尺寸 */}
               <div
-                className="absolute top-[2.75rem] w-[448px] h-5 rounded-sm shadow-md"
+                className="absolute top-[3.5rem] w-[560px] h-6 rounded-sm shadow-md"
                 style={{
                   background: 'linear-gradient(180deg,#c4b5fd,#a78bfa)',
-                  boxShadow: 'inset 0 1px 2px rgba(255,255,255,0.7), inset 0 -1px 2px rgba(167,139,250,0.45)',
+                  boxShadow: 'inset 0 1px 2px rgba(255,255,255,0.7), inset 0 -1px 3px rgba(167,139,250,0.55), 0 2px 8px rgba(167,139,250,0.3)',
                   zIndex: 30,
                 }}
               />
-              <div className="absolute top-0 w-full h-10"
+              <div className="absolute top-0 w-full h-16"
                    style={{
-                     background: 'linear-gradient(180deg, rgba(139,92,246,0.12), rgba(139,92,246,0.04))',
+                     background: 'linear-gradient(180deg, rgba(139,92,246,0.22), rgba(139,92,246,0.08))',
                      zIndex: 25,
                    }}></div>
-              {/* 向下移动阴影过渡位置 */}
+              {/* 向下移动阴影过渡位置 - 增大尺寸 */}
               <div
-                className="absolute top-[3.1rem] w-[448px] h-2 rounded-sm"
+                className="absolute top-[4.1rem] w-[560px] h-3 rounded-sm"
                 style={{
-                  background: 'linear-gradient(180deg, rgba(139,92,246,0.22), rgba(139,92,246,0))',
+                  background: 'linear-gradient(180deg, rgba(139,92,246,0.28), rgba(139,92,246,0))',
                   zIndex: 26,
                 }}
               />
 
-              {/* 优化整纸显示容器 */}
-              <div className="absolute w-[448px]" style={{ top: 0, height: (shredPhase === 'in' || shredPhase === 'prep') ? bladeOffset : '100%', overflow: (shredPhase === 'in' || shredPhase === 'prep') ? 'hidden' : 'visible', zIndex: (shredPhase === 'idle') ? 40 : 5 }}>
+              {/* 优化整纸显示容器 - 增大尺寸 */}
+              <div className="absolute w-[560px]" style={{ top: 0, height: (shredPhase === 'in' || shredPhase === 'prep') ? bladeOffset : '100%', overflow: (shredPhase === 'in' || shredPhase === 'prep') ? 'hidden' : 'visible', zIndex: (shredPhase === 'idle') ? 40 : 27 }}>
                 <div 
                   ref={paperRef}
-                  className="mx-auto bg-rose-50 shadow-[0_6px_14px_rgba(236,72,153,0.18)] rounded-md border border-rose-200 text-rose-700 text-sm p-3 text-center"
+                  className="mx-auto bg-rose-50 shadow-[0_8px_20px_rgba(236,72,153,0.22)] rounded-md border border-rose-200 text-rose-700 text-lg p-4 text-center"
                   style={{
-                    width: '15rem',
+                    width: '20rem',
                     backgroundImage: 'linear-gradient(180deg,rgba(255,240,245,1),rgba(255,228,235,1))',
-                    transform: `translateY(${Math.round(20 + preOffset + shredProgress * feedDistance)}px)`,
+                    // 设置纸条底部与紫色刀口条带下端对齐
+                    position: 'absolute',
+                    left: '50%',
+                    // 刀口位置是top-[3.5rem]，高度是h-6(1.5rem)，所以下端位置是5rem
+                    bottom: `calc(100% - 5rem)`,
+                    transform: `translateX(-50%) translateY(${Math.round(preOffset + shredProgress * feedDistance)}px)`,
                     // 增加平滑过渡动画
-                    transition: 'transform 0.1s ease-out',
+                    transition: 'transform 0.08s ease-out',
                     // in 阶段显示整纸，但被刀口裁剪；fall 阶段隐藏整纸
                     opacity: shredPhase === 'fall' ? 0 : 1,
-                    position: 'relative',
-                    zIndex: shredPhase === 'idle' ? 40 : 5,
+                    zIndex: shredPhase === 'idle' ? 40 : 27,
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word',
                     overflowWrap: 'break-word',
-                    maxWidth: '34ch',
-                    margin: '0 auto',
+                    maxWidth: '30ch',
                   }}
                 >
                   {shredText || ' '}
                 </div>
               </div>
 
-              {/* 优化纸片条容器，确保动画衔接流畅 */}
+              {/* 优化纸片条容器，确保动画衔接流畅 - 增大尺寸 */}
               {(shredPhase === 'in' || shredPhase === 'fall') && (
-                <div className="absolute w-[448px]" style={{ pointerEvents: 'none', zIndex: 10, top: bladeOffset, height: `calc(100% - ${bladeOffset}px)`, overflow: 'hidden' }}>
+                <div className="absolute w-[560px]" style={{ pointerEvents: 'none', zIndex: 10, top: bladeOffset, height: `calc(100% - ${bladeOffset}px)`, overflow: 'hidden' }}>
                   {Array.from({ length: strips }).map((_, i) => {
                     const sliceW = paperSize.width / strips;
-                    const containerW = 448; // w-[448px]
+                    const containerW = 560; // w-[560px]
                     const gutter = Math.max(0, (containerW - paperSize.width) / 2);
                     const leftOffset = gutter + sliceW * i;
                     const param = stripParams[i] || { rot: (i % 2 === 0 ? 10 : -10), x: 0, delay: (i % 5) * 0.05 };
                     const delay = param.delay;
                     const rotate = param.rot;
-                    const baseH = paperSize.height || 96;
+                    const baseH = paperSize.height || 120;
                     // 修复：确保进纸阶段穿过碎纸机的长度随shredProgress逐渐增加
                     // 所有阶段都让高度随shredProgress逐渐增加，确保穿过碎纸机的长度动态变化
-                    const cutHeight = Math.max(6, Math.min(baseH * shredProgress, 220));
+                    const cutHeight = Math.max(6, Math.min(baseH * shredProgress, 280));
                     return (
                       <div
                         key={i}
@@ -1217,24 +1222,24 @@ export default function CoupleApp() {
                           left: `${leftOffset}px`,
                           width: `${Math.max(1, sliceW - 1)}px`,
                           height: `${cutHeight}px`,
-                          // 优化动画过渡，增加弹性效果
+                          // 优化动画过渡，增强粉碎效果
                           transform: shredPhase === 'fall'
-                            ? `translateY(260px) rotate(${rotate}deg) translateX(${(param.x * 1.2).toFixed(2)}px)`
-                            : `translateY(${(Math.sin((shredProgress * 6.283 * 0.5 + i) * 0.8) * 2.0).toFixed(2)}px) translateX(${(Math.sin((shredProgress * 6.283 + i) * 1.0) * 3 + param.x * Math.min(1, shredProgress * 1.2) * 0.4).toFixed(2)}px) skewY(${((i % 2 === 0 ? 1 : -1) * 1.5).toFixed(2)}deg)`,
-                          // 优化过渡效果，使动画更流畅
+                            ? `translateY(320px) rotate(${rotate}deg) translateX(${(param.x * 1.5).toFixed(2)}px)`
+                            : `translateY(${(Math.sin((shredProgress * 6.283 * 0.5 + i) * 1.2) * 3.0).toFixed(2)}px) translateX(${(Math.sin((shredProgress * 6.283 + i) * 1.2) * 5 + param.x * Math.min(1, shredProgress * 1.5) * 0.5).toFixed(2)}px) skewY(${((i % 2 === 0 ? 1 : -1) * 2.0).toFixed(2)}deg)`,
+                          // 优化过渡效果，使动画更流畅更有冲击力
                           transition: shredPhase === 'fall'
-                            ? `transform 1.8s ease-in ${delay}s, opacity 1.8s ease-in ${delay}s`
-                            : 'height 0.05s ease, transform 0.1s ease-out, opacity 0.1s ease-out',
+                            ? `transform 2.0s cubic-bezier(0.25, 0.46, 0.45, 0.94) ${delay}s, opacity 2.0s ease-in ${delay}s`
+                            : 'height 0.05s ease, transform 0.08s ease-out, opacity 0.08s ease-out',
                           // 优化透明度过渡，使纸片条逐渐出现
-                          opacity: shredPhase === 'fall' ? 0 : Math.min(1, Math.max(0.5, shredProgress * 1.5)),
-                          borderTop: '1px solid rgba(236,72,153,0.35)',
-                          boxShadow: `${cutHeight > 0 ? '0 8px 18px rgba(0,0,0,0.22)' : 'none'}, inset 0 1px 0 rgba(255,255,255,0.6)`,
+                          opacity: shredPhase === 'fall' ? 0 : Math.min(1, Math.max(0.6, shredProgress * 1.5)),
+                          borderTop: '1px solid rgba(236,72,153,0.45)',
+                          boxShadow: `${cutHeight > 0 ? '0 10px 24px rgba(0,0,0,0.28)' : 'none'}, inset 0 1px 0 rgba(255,255,255,0.6)`,
 
                           background: 'linear-gradient(180deg,rgba(255,240,245,1),rgba(255,228,235,1))'
                         }}
                       >
                         <div
-                          className="text-rose-800 text-sm p-3 text-center"
+                          className="text-rose-800 text-base p-4 text-center"
                           style={{
                             width: `${paperSize.width}px`,
                             transform: `translateX(-${sliceW * i}px)`,
@@ -1244,7 +1249,7 @@ export default function CoupleApp() {
                             whiteSpace: 'pre-wrap',
                             wordBreak: 'break-word',
                             overflowWrap: 'break-word',
-                            maxWidth: '34ch',
+                            maxWidth: '45ch',
                             margin: '0 auto',
                           }}
                         >
