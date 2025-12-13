@@ -307,7 +307,6 @@ export default function CoupleApp() {
       const diaryQuery = new AV.Query('Diary');
       diaryQuery.equalTo('coupleId', coupleId);
       diaryQuery.descending('createdAt'); 
-      diaryQuery.limit(20); 
       const diaryRes = await diaryQuery.find();
       const diaryList = diaryRes.map((d: any) => ({
         id: d.id || '',
