@@ -43,7 +43,6 @@ interface CoupleSettings { startDate: string; names: string; bgImage?: string; }
 // 心电感应功能类型定义
 interface MoodEntry { id: string; coupleId: string; mood: { emoji: string; label: string; color: string; }; authorName: string; description?: string; createdAt: Date; }
 interface MoodOption { emoji: string; label: string; color: string; }
-interface MoodStats { currentMood: string; lastUpdate: Date; updatesToday: number; }
 interface CycleData { lastDate: string; cycleDays: number; periodDays: number; }
 // 情侣问答功能类型定义
 interface Question { id: string; coupleId: string; question: string; authorName: string; createdAt: Date; answered: boolean; answer?: string; answerDate?: Date; }
@@ -979,7 +978,6 @@ export default function CoupleApp() {
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [showAnswerInput, setShowAnswerInput] = useState(false);
   const [answerText, setAnswerText] = useState('');
-  const [showQuestionDetail, setShowQuestionDetail] = useState(false);
   
   // 生成日历数据
   const generateCalendarData = useMemo(() => {
@@ -1332,11 +1330,10 @@ export default function CoupleApp() {
                   ))}
                 </div>
                 
-                {/* 计算当天的开始和结束时间 */}
+                {/* 计算当天的开始时间 */}
                 {(() => {
                   const today = new Date();
                   const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
-                  const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
                   const totalMinutesInDay = 1440; // 24小时 * 60分钟
                   
                   // 计算心情值对应的Y轴位置
