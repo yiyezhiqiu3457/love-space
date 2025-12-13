@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame, ListTodo, CheckSquare, Trash2, Droplet, Thermometer, Smartphone, Share, Camera, Calendar, ChevronLeft, ChevronRight, Clock
+  Heart, Gift, PenTool, Settings, Copy, LogOut, Image as ImageIcon, Sparkles, X, RefreshCw, MessageCircle, CheckCircle2, Flame, ListTodo, CheckSquare, Trash2, Droplet, Thermometer, Smartphone, Share, Camera, Calendar, ChevronLeft, ChevronRight, Clock, Edit, User, Activity
 } from 'lucide-react';
 
 // ======================================================================
@@ -16,9 +16,11 @@ import AV from 'leancloud-storage';
 // --- 配置区域 (请确保这些 Key 是您自己的 LeanCloud 应用 Key) ---
 const LC_APP_ID = "3z3uky7oBaOs2hFDXqXcxJbF-MdYXbMMI";
 const LC_APP_KEY = "9pGRzGBqLM5ihqXGhHdSrjY5";
-// ⚠️ 核心修改：使用 Vercel 代理绕过跨域限制
-const LC_SERVER_URL = "/api"; 
-
+// 根据环境选择服务器URL
+// 生产环境使用 Vercel 代理，开发环境直接使用 LeanCloud 服务器
+const LC_SERVER_URL = import.meta.env.PROD 
+  ? "/api" 
+  : "https://3z3uky7o.api.lncldglobal.com/";
 
 
 
@@ -36,9 +38,15 @@ interface Memorial { id: string; coupleId: string; title: string; date: string; 
 interface DiaryEntry { id: string; coupleId: string; text: string; mood: string; authorName: string; createdAt: Date; }
 interface WishItem { id: string; coupleId: string; text: string; completed: boolean; createdAt: Date; }
 interface PhotoItem { id: string; coupleId: string; url: string; caption: string; createdAt: Date; }
-interface ScheduleItem { id: string; coupleId: string; title: string; date: string; time?: string; type?: string; creator: string; } 
+interface ScheduleItem { id: string; coupleId: string; title: string; date: string; time?: string; type?: string; creator: string; }
 interface CoupleSettings { startDate: string; names: string; bgImage?: string; }
+// 心电感应功能类型定义
+interface MoodEntry { id: string; coupleId: string; mood: { emoji: string; label: string; color: string; }; authorName: string; description?: string; createdAt: Date; }
+interface MoodOption { emoji: string; label: string; color: string; }
+interface MoodStats { currentMood: string; lastUpdate: Date; updatesToday: number; }
 interface CycleData { lastDate: string; cycleDays: number; periodDays: number; }
+// 情侣问答功能类型定义
+interface Question { id: string; coupleId: string; question: string; authorName: string; createdAt: Date; answered: boolean; answer?: string; answerDate?: Date; }
 
 // --- 工具函数：图片压缩 ---
 const compressImage = (file: File): Promise<Blob> => {
@@ -126,7 +134,7 @@ const LoginScreen = ({ onJoin, onCreate }: { onJoin: (id: string, name: string) 
 
 // --- 主应用 ---
 export default function CoupleApp() {
-  const [view, setView] = useState<'home' | 'memorials' | 'album' | 'diary' | 'wishlist' | 'cycle' | 'settings' | 'schedule' | 'shredder'>('home'); 
+  const [view, setView] = useState<'home' | 'memorials' | 'album' | 'diary' | 'wishlist' | 'cycle' | 'settings' | 'schedule' | 'shredder' | 'mood' | 'questions'>('home');
   const [coupleId, setCoupleId] = useState<string>('');
   const [userName, setUserName] = useState('');
   const [isEntered, setIsEntered] = useState(false);
@@ -139,9 +147,26 @@ export default function CoupleApp() {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [settings, setSettings] = useState<CoupleSettings>({ startDate: new Date().toISOString().split('T')[0], names: '我们' });
-  const [settingsObjId, setSettingsObjId] = useState<string>(''); 
+  const [settingsObjId, setSettingsObjId] = useState<string>('');
   const [cycle, setCycle] = useState<CycleData>({ lastDate: '', cycleDays: 28, periodDays: 5 });
   const [cycleObjId, setCycleObjId] = useState<string>('');
+  // 心情相关数据状态
+  const [moodEntries, setMoodEntries] = useState<MoodEntry[]>([]);
+  const [showMoodPicker, setShowMoodPicker] = useState(false);
+  const [selectedMood, setSelectedMood] = useState<MoodOption | null>(null);
+  const [moodDescription, setMoodDescription] = useState<string>('');
+  
+  // 预定义心情选项
+  const moodOptions: MoodOption[] = [
+    { emoji: '🥳', label: '兴奋', color: '#fb923c' },
+    { emoji: '😊', label: '开心', color: '#fbbf24' },
+    { emoji: '🤔', label: '思考', color: '#14b8a6' },
+    { emoji: '😌', label: '平静', color: '#34d399' },
+    { emoji: '😴', label: '疲惫', color: '#a78bfa' },
+    { emoji: '🤯', label: '烦躁', color: '#f472b6' },
+    { emoji: '😢', label: '难过', color: '#60a5fa' },
+    { emoji: '😠', label: '生气', color: '#ef4444' }
+  ];
 
   // UI 控制状态
   const [showAddMem, setShowAddMem] = useState(false);
@@ -398,10 +423,66 @@ export default function CoupleApp() {
       }
       setLoveStreak(streak);
 
+      // 9. 获取心情记录
+      // @ts-ignore
+      const moodQuery = new AV.Query('Mood');
+      moodQuery.equalTo('coupleId', coupleId);
+      moodQuery.descending('createdAt');
+      moodQuery.limit(100);
+      const moodRes = await moodQuery.find();
+      const moodList = moodRes.map((m: any) => ({
+        id: m.id || '',
+        coupleId: m.get('coupleId'),
+        mood: m.get('mood'),
+        authorName: m.get('authorName'),
+        description: m.get('description'),
+        createdAt: m.createdAt || new Date()
+      }));
+      setMoodEntries(moodList);
+
+      // 10. 获取情侣问答数据
+      // @ts-ignore
+      const questionQuery = new AV.Query('Question');
+      questionQuery.equalTo('coupleId', coupleId);
+      questionQuery.descending('createdAt');
+      const questionRes = await questionQuery.find();
+      const questionList = questionRes.map((q: any) => ({
+        id: q.id || '',
+        coupleId: q.get('coupleId'),
+        question: q.get('question'),
+        authorName: q.get('authorName'),
+        createdAt: q.createdAt || new Date(),
+        answered: q.get('answered') || false,
+        answer: q.get('answer') || '',
+        answerDate: q.get('answerDate') || null
+      }));
+      setQuestions(questionList);
+
     } catch (error) {
       console.error("Fetch error:", error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // --- 心情记录逻辑 ---
+  const saveMood = async () => {
+    if (!selectedMood) return;
+    try {
+      // @ts-ignore
+      const MoodClass = AV.Object.extend('Mood');
+      const m = new MoodClass();
+      m.set('coupleId', coupleId);
+      m.set('mood', selectedMood); // 保存整个心情对象
+      m.set('authorName', userName);
+      m.set('description', moodDescription);
+      await m.save();
+      setShowMoodPicker(false);
+      setSelectedMood(null);
+      setMoodDescription('');
+      fetchData();
+    } catch (e) {
+      showErrorAlert("保存心情", e);
     }
   };
 
@@ -746,9 +827,269 @@ export default function CoupleApp() {
     else return { status: 'normal', text: `距离下次 ${daysUntilNext} 天`, tip: '平淡的日子也要记得说我爱你。❤️' };
   }, [cycle]);
 
+  // 计算当前双方的心情
+  const myCurrentMood = useMemo(() => {
+    if (!moodEntries.length) return null;
+    // 找到当前用户的最新心情记录
+    const myMoods = moodEntries
+      .filter(entry => entry.authorName === userName)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    
+    if (myMoods.length === 0) return null;
+    
+    const latest = myMoods[0];
+    const moodOption = moodOptions.find(opt => opt.label === latest.mood.label);
+    return moodOption ? { ...moodOption, updatedAt: latest.createdAt } : null;
+  }, [moodEntries, userName]);
+
+  const partnerCurrentMood = useMemo(() => {
+    if (!moodEntries.length) return null;
+    // 找到对方的最新心情记录
+    const partnerMoods = moodEntries
+      .filter(entry => entry.authorName !== userName)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    
+    if (partnerMoods.length === 0) return null;
+    
+    const latest = partnerMoods[0];
+    const moodOption = moodOptions.find(opt => opt.label === latest.mood.label);
+    return moodOption ? { ...moodOption, updatedAt: latest.createdAt } : null;
+  }, [moodEntries, userName]);
+
+  // 计算今日的心情记录
+  const todayMyMoods = useMemo(() => {
+    if (!moodEntries.length) return [];
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    return moodEntries
+      .filter(entry => {
+        const entryDate = new Date(entry.createdAt);
+        return entry.authorName === userName && entryDate >= today && entryDate < tomorrow;
+      })
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+      .map(entry => {
+        const moodOption = moodOptions.find(opt => opt.label === entry.mood.label);
+        return { ...entry, emoji: moodOption?.emoji };
+      });
+  }, [moodEntries, userName]);
+
+  const todayPartnerMoods = useMemo(() => {
+    if (!moodEntries.length) return [];
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    return moodEntries
+      .filter(entry => {
+        const entryDate = new Date(entry.createdAt);
+        return entry.authorName !== userName && entryDate >= today && entryDate < tomorrow;
+      })
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+      .map(entry => {
+        const moodOption = moodOptions.find(opt => opt.label === entry.mood.label);
+        return { ...entry, emoji: moodOption?.emoji };
+      });
+  }, [moodEntries, userName]);
+
+  const todayAllMoods = useMemo(() => {
+    if (!moodEntries.length) return [];
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    return moodEntries
+      .filter(entry => {
+        const entryDate = new Date(entry.createdAt);
+        return entryDate >= today && entryDate < tomorrow;
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [moodEntries]);
+
+  // 计算每日主导心情（时间占比最大的心情）
+  const calculateDailyMoods = useMemo(() => {
+    if (!moodEntries.length) return { mine: {}, partner: {} };
+    
+    // 按作者分组心情记录
+    const myMoods = moodEntries
+      .filter(entry => entry.authorName === userName)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    
+    const partnerMoods = moodEntries
+      .filter(entry => entry.authorName !== userName)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    
+    // 计算单个用户每日主导心情的辅助函数
+    const getDailyDominantMoods = (moods: MoodEntry[]) => {
+      const dailyMoods: Record<string, { mood: MoodOption; duration: number }> = {};
+      
+      for (let i = 0; i < moods.length; i++) {
+        const current = moods[i];
+        const next = moods[i + 1];
+        
+        const currentDate = new Date(current.createdAt);
+        const dateStr = currentDate.toDateString();
+        
+        // 计算当前心情的持续时间（到下一条记录的时间差，或到当天结束）
+        const endTime = next 
+          ? new Date(next.createdAt)
+          : new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), 23, 59, 59);
+        
+        const duration = endTime.getTime() - currentDate.getTime();
+        
+        if (!dailyMoods[dateStr]) {
+          dailyMoods[dateStr] = { 
+            mood: current.mood, 
+            duration: duration 
+          };
+        } else {
+          // 如果当天已有心情记录，比较持续时间
+          if (duration > dailyMoods[dateStr].duration) {
+            dailyMoods[dateStr] = { 
+              mood: current.mood, 
+              duration: duration 
+            };
+          }
+        }
+      }
+      
+      return dailyMoods;
+    };
+    
+    return {
+      mine: getDailyDominantMoods(myMoods),
+      partner: getDailyDominantMoods(partnerMoods)
+    };
+  }, [moodEntries, userName]);
+
+  // 日历相关状态
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [showMoodCalendar, setShowMoodCalendar] = useState(false);
+
+  // --- 情侣问答功能状态 ---
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [newQuestion, setNewQuestion] = useState('');
+  const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
+  const [showAnswerInput, setShowAnswerInput] = useState(false);
+  const [answerText, setAnswerText] = useState('');
+  const [showQuestionDetail, setShowQuestionDetail] = useState(false);
+  
+  // 生成日历数据
+  const generateCalendarData = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    
+    // 获取当月第一天
+    const firstDay = new Date(year, month, 1);
+    // 获取当月最后一天
+    const lastDay = new Date(year, month + 1, 0);
+    // 获取当月第一天是星期几（0=周日，1=周一，...，6=周六）
+    const firstDayWeekday = firstDay.getDay();
+    // 获取当月天数
+    const daysInMonth = lastDay.getDate();
+    // 获取上月最后一天
+    const lastDayOfPrevMonth = new Date(year, month, 0);
+    // 获取上月最后一天的日期
+    const lastDateOfPrevMonth = lastDayOfPrevMonth.getDate();
+    // 计算需要显示的上月天数
+    const daysFromPrevMonth = firstDayWeekday;
+    // 计算需要显示的总天数（包括上月和下月的部分天数）
+    const totalDaysToShow = daysFromPrevMonth + daysInMonth;
+    // 计算需要显示的下月天数
+    const daysFromNextMonth = Math.ceil(totalDaysToShow / 7) * 7 - totalDaysToShow;
+    
+    // 生成日历数据
+    const days = [];
+    
+    // 添加上月的日期
+    for (let i = daysFromPrevMonth - 1; i >= 0; i--) {
+      const day = lastDateOfPrevMonth - i;
+      const date = new Date(year, month - 1, day);
+      const dateStr = date.toDateString();
+      
+      days.push({
+        day,
+        date: dateStr,
+        isCurrentMonth: false,
+        myMood: calculateDailyMoods.mine[dateStr]?.mood,
+        partnerMood: calculateDailyMoods.partner[dateStr]?.mood
+      });
+    }
+    
+    // 添加当月的日期
+    for (let i = 1; i <= daysInMonth; i++) {
+      const date = new Date(year, month, i);
+      const dateStr = date.toDateString();
+      
+      days.push({
+        day: i,
+        date: dateStr,
+        isCurrentMonth: true,
+        myMood: calculateDailyMoods.mine[dateStr]?.mood,
+        partnerMood: calculateDailyMoods.partner[dateStr]?.mood
+      });
+    }
+    
+    // 添加下月的日期
+    for (let i = 1; i <= daysFromNextMonth; i++) {
+      const date = new Date(year, month + 1, i);
+      const dateStr = date.toDateString();
+      
+      days.push({
+        day: i,
+        date: dateStr,
+        isCurrentMonth: false,
+        myMood: calculateDailyMoods.mine[dateStr]?.mood,
+        partnerMood: calculateDailyMoods.partner[dateStr]?.mood
+      });
+    }
+    
+    // 生成星期标题
+    const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    
+    return {
+      year,
+      month,
+      days,
+      weekdays
+    };
+  }, [currentMonth, calculateDailyMoods]);
+  
+  // 切换月份
+  const handlePrevMonth = () => {
+    setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  };
+  
+  const handleNextMonth = () => {
+    setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+
   const copyInviteCode = () => {
     navigator.clipboard.writeText(coupleId);
     alert(`配对码 ${coupleId} 已复制！`);
+  };
+
+  // 处理选择心情
+  const handleSelectMood = (mood: MoodOption) => {
+    setSelectedMood(mood);
+  };
+  
+  const handleSaveMood = async () => {
+    if (!selectedMood) return;
+    
+    try {
+      await saveMood();
+    } catch (error) {
+      console.error('保存心情失败:', error);
+      alert('保存心情失败，请重试');
+    }
   };
 
   if (!isEntered) return <LoginScreen onJoin={handleJoin} onCreate={handleCreate} />;
@@ -759,6 +1100,65 @@ export default function CoupleApp() {
       <div className="absolute inset-0 z-0 bg-cover bg-center transition-all duration-700"
         style={{ backgroundImage: settings.bgImage ? `url(${settings.bgImage})` : 'linear-gradient(to bottom right, #fce7f3, #ffffff)', filter: 'brightness(0.95)' }} />
       <div className={`absolute inset-0 z-0 ${settings.bgImage ? 'bg-white/60 backdrop-blur-md' : ''}`}></div>
+
+      {/* 心情选择浮窗 */}
+      {showMoodPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 animate-fade-in">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-gray-800">记录心情</h2>
+              <button 
+                onClick={() => {
+                  setShowMoodPicker(false);
+                  setSelectedMood(null);
+                  setMoodDescription('');
+                }} 
+                className="p-2 hover:bg-gray-100 rounded-full transition"
+              >
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+            
+            <div className="mb-4">
+              <h3 className="text-sm font-bold text-gray-700 mb-2">选择心情</h3>
+              <div className="grid grid-cols-4 gap-3">
+                {moodOptions.map((mood) => (
+                  <button
+                    key={mood.label}
+                    onClick={() => handleSelectMood(mood)}
+                    className={`flex flex-col items-center gap-1 p-3 rounded-xl transition ${selectedMood?.label === mood.label ? 'bg-pink-100 ring-2 ring-pink-300' : 'bg-gray-50 hover:bg-gray-100'}`}
+                  >
+                    <span className="text-3xl">{mood.emoji}</span>
+                    <span className="text-xs text-gray-600">{mood.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            <div className="mb-5">
+              <h3 className="text-sm font-bold text-gray-700 mb-2">心情描述 (可选)</h3>
+              <textarea
+                value={moodDescription}
+                onChange={(e) => setMoodDescription(e.target.value)}
+                placeholder="今天的心情如何？"
+                className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 resize-none h-24"
+                maxLength={100}
+              />
+              <div className="text-xs text-gray-400 text-right mt-1">
+                {moodDescription.length}/100
+              </div>
+            </div>
+            
+            <button
+              onClick={handleSaveMood}
+              disabled={!selectedMood}
+              className={`w-full py-3 rounded-xl font-bold text-white transition ${selectedMood ? 'bg-pink-500 hover:bg-pink-600 shadow-lg shadow-pink-200' : 'bg-gray-300 cursor-not-allowed'}`}
+            >
+              保存心情
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 顶部 */}
       <div className="relative z-10 px-6 py-4 flex justify-between items-center">
@@ -809,6 +1209,55 @@ export default function CoupleApp() {
               )}
             </div>
 
+            {/* 心电感应 - 双方心情显示 */}
+            <div className="bg-white/60 backdrop-blur-lg rounded-2xl p-5 shadow-sm border border-white/40 mt-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                  <Activity size={18} className="text-pink-500" /> 心电感应
+                </h3>
+                <button onClick={() => setView('mood')} className="text-xs font-bold text-purple-500 hover:text-purple-600 transition">
+                  查看详情
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                {/* 自己的心情 */}
+                <div className="flex flex-col items-center p-3 bg-pink-50 rounded-xl hover:bg-pink-100 cursor-pointer transition" onClick={() => setShowMoodPicker(true)}>
+                  <div className="text-sm font-bold text-gray-800 mb-1">我的心情</div>
+                  {myCurrentMood ? (
+                    <div className={`flex flex-col items-center gap-2 p-2 rounded-full`}>
+                      <span className="text-5xl">{myCurrentMood.emoji}</span>
+                      <span className="text-xs text-gray-500">{myCurrentMood.label}</span>
+                    </div>
+                  ) : (
+                    <div className="text-3xl text-gray-400 p-2 rounded-full">
+                      <Edit size={36} />
+                    </div>
+                  )}
+                </div>
+                
+                {/* 对方的心情 */}
+                <div className="flex flex-col items-center p-3 bg-blue-50 rounded-xl">
+                  <div className="text-sm font-bold text-gray-800 mb-1">对方心情</div>
+                  {partnerCurrentMood ? (
+                    <div className="flex flex-col items-center gap-2 p-2 rounded-full">
+                      <span className="text-5xl">{partnerCurrentMood.emoji}</span>
+                      <span className="text-xs text-gray-500">{partnerCurrentMood.label}</span>
+                      {partnerCurrentMood.updatedAt && (
+                        <span className="text-[10px] text-gray-400 mt-1">
+                          更新于 {new Date(partnerCurrentMood.updatedAt).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-3xl text-gray-400 p-2 rounded-full">
+                      <User size={36} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-4 mt-6">
                <button onClick={() => setView('schedule')} className="col-span-2 bg-gradient-to-r from-blue-100 to-cyan-100 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-row items-center justify-center gap-3 active:scale-95 transition-transform hover:scale-[1.01]">
                   <div className="w-10 h-10 bg-blue-200 rounded-full flex items-center justify-center text-blue-600"><Calendar size={20} /></div>
@@ -830,11 +1279,204 @@ export default function CoupleApp() {
                <button onClick={() => setView('shredder')} className="bg-white/60 backdrop-blur-lg p-6 rounded-3xl shadow-sm border border-white/40 flex flex-col items-center gap-3 active:scale-95 transition-transform hover:scale-[1.02]">
                   <Trash2 size={24} className="text-gray-700" /><span className="font-bold text-gray-700">坏情绪粉碎机</span>
                </button>
+               <button onClick={() => setView('questions')} className={`${questions.filter(q => q.authorName !== userName && !q.answered).length > 0 ? 'bg-yellow-100 backdrop-blur-lg' : 'bg-white/60 backdrop-blur-lg'} p-6 rounded-3xl shadow-sm border ${questions.filter(q => q.authorName !== userName && !q.answered).length > 0 ? 'border-yellow-200' : 'border-white/40'} flex flex-col items-center gap-3 active:scale-95 transition-transform hover:scale-[1.02]`}>
+                  <MessageCircle size={24} className="text-green-500" /><span className="font-bold text-gray-700">情侣问答</span>
+               </button>
             </div>
             
             <div onClick={copyInviteCode} className="mt-6 bg-gray-900/5 backdrop-blur-sm rounded-xl p-4 flex items-center justify-between cursor-pointer active:bg-gray-900/10 transition">
               <div className="flex items-center gap-3"><Copy size={14} /><span className="font-mono font-bold text-gray-800">{coupleId}</span></div>
               <span className="text-xs font-bold text-pink-500">点击复制配对码</span>
+            </div>
+          </div>
+        )}
+
+        {/* 心情详情页 */}
+        {view === 'mood' && (
+          <div className="space-y-4 animate-fade-in pb-20">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                <Activity className="text-pink-500" /> 心电感应
+              </h2>
+              <div className="flex gap-2">
+                <button onClick={() => setShowMoodPicker(true)} className="bg-pink-500 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-lg shadow-pink-200 hover:bg-pink-600 active:scale-95 transition">
+                  <Edit size={16} className="inline mr-1" /> 记录心情
+                </button>
+                <button onClick={() => setShowMoodCalendar(true)} className="bg-blue-500 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-lg shadow-blue-200 hover:bg-blue-600 active:scale-95 transition">
+                  <Calendar size={16} className="inline mr-1" /> 心情日历
+                </button>
+              </div>
+            </div>
+
+            {/* 今天的心情变化 */}
+            <div className="bg-white/80 backdrop-blur-md rounded-3xl p-5 shadow-sm border border-white/50">
+              <h3 className="font-bold text-gray-800 mb-4">今日心情变化</h3>
+              
+              {/* 心情曲线图表 */}
+              <div className="h-60 w-full relative">
+                {/* Y轴 - 心情值 */}
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-gray-200">
+                  {moodOptions.map((option, i) => (
+                    <div key={i} className="absolute left-0 -ml-20 w-16 text-right transform -translate-y-1/2" style={{ top: `${(i / (moodOptions.length - 1)) * 90 + 5}%` }}>
+                      <span className="text-xs text-gray-500">{option.label}</span>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* X轴 - 时间 */}
+                <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-200">
+                  {['00:00', '04:00', '08:00', '12:00', '16:00', '20:00', '24:00'].map((time, i) => (
+                    <div key={i} className="absolute bottom-0 -mb-4 transform -translate-x-1/2" style={{ left: `${(i / 6) * 100}%` }}>
+                      <span className="text-xs text-gray-500">{time}</span>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* 计算当天的开始和结束时间 */}
+                {(() => {
+                  const today = new Date();
+                  const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
+                  const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+                  const totalMinutesInDay = 1440; // 24小时 * 60分钟
+                  
+                  // 计算心情值对应的Y轴位置
+                  const getMoodYPosition = (moodLabel: string): number => {
+                    const index = moodOptions.findIndex(opt => opt.label === moodLabel);
+                    if (index === -1) return 50;
+                    // 将心情索引转换为Y轴位置，0=底部，100=顶部
+                    return (index / (moodOptions.length - 1)) * 90 + 5;
+                  };
+                  
+                  // 计算时间对应的X轴位置
+                  const getTimeXPosition = (date: Date): number => {
+                    const minutesFromStart = (date.getTime() - startOfDay.getTime()) / (1000 * 60);
+                    return (minutesFromStart / totalMinutesInDay) * 100;
+                  };
+                  
+                  return (
+                    <>
+                      {/* 我的心情曲线 */}
+                      <div className="absolute top-0 left-0 right-0 h-full">
+                        <div className="text-xs text-gray-600 mb-2 flex items-center gap-1">
+                          <div className="w-3 h-3 bg-pink-400 rounded-full"></div>
+                          <span>我的心情</span>
+                        </div>
+                        <div className="relative h-[calc(100%-20px)]">
+                          {/* 绘制折线 */}
+                          {todayMyMoods.length > 1 && (
+                            <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                              <polyline
+                                points={todayMyMoods.map(mood => {
+                                  const x = getTimeXPosition(new Date(mood.createdAt));
+                                  const y = getMoodYPosition(mood.mood.label);
+                                  return `${x},${y}`;
+                                }).join(' ')}
+                                stroke="#f472b6"
+                                strokeWidth="1.5"
+                                fill="none"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          )}
+                          {/* 绘制数据点 */}
+                          {todayMyMoods.map((mood, i) => (
+                            <div key={i} className="absolute transform -translate-x-1/2 -translate-y-1/2" 
+                              style={{
+                                left: `${getTimeXPosition(new Date(mood.createdAt))}%`,
+                                top: `${getMoodYPosition(mood.mood.label)}%`
+                              }}
+                            >
+                              <div className="w-3 h-3 bg-pink-400 rounded-full hover:scale-125 transition"></div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      {/* 对方的心情曲线 */}
+                      <div className="absolute bottom-0 left-0 right-0 h-full">
+                        <div className="text-xs text-gray-600 mt-4 flex items-center gap-1">
+                          <div className="w-3 h-3 bg-blue-400 rounded-full"></div>
+                          <span>对方心情</span>
+                        </div>
+                        <div className="relative h-[calc(100%-20px)]">
+                          {/* 绘制折线 */}
+                          {todayPartnerMoods.length > 1 && (
+                            <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                              <polyline
+                                points={todayPartnerMoods.map(mood => {
+                                  const x = getTimeXPosition(new Date(mood.createdAt));
+                                  const y = getMoodYPosition(mood.mood.label);
+                                  return `${x},${y}`;
+                                }).join(' ')}
+                                stroke="#60a5fa"
+                                strokeWidth="1.5"
+                                fill="none"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          )}
+                          {/* 绘制数据点 */}
+                          {todayPartnerMoods.map((mood, i) => (
+                            <div key={i} className="absolute transform -translate-x-1/2 -translate-y-1/2" 
+                              style={{
+                                left: `${getTimeXPosition(new Date(mood.createdAt))}%`,
+                                top: `${getMoodYPosition(mood.mood.label)}%`
+                              }}
+                            >
+                              <div className="w-3 h-3 bg-blue-400 rounded-full hover:scale-125 transition"></div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* 详细心情记录 */}
+            <div className="bg-white/80 backdrop-blur-md rounded-3xl p-5 shadow-sm border border-white/50">
+              <h3 className="font-bold text-gray-800 mb-4">心情记录</h3>
+              
+              {todayAllMoods.length > 0 ? (
+                <div className="space-y-3">
+                  {todayAllMoods.map((mood) => {
+                    const moodOption = moodOptions.find(opt => opt.label === mood.mood.label);
+                    return (
+                      <div key={mood.id} className={`p-3 rounded-xl ${mood.authorName === userName ? 'bg-pink-50' : 'bg-blue-50'}`}>
+                        <div className="flex justify-between items-start">
+                          <div className="flex items-center gap-3">
+                            <span className="text-3xl">{moodOption?.emoji}</span>
+                            <div>
+                              <div className="font-bold text-gray-800">
+                                {mood.authorName === userName ? '我' : '对方'} - {moodOption?.label}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {new Date(mood.createdAt).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        {mood.description && (
+                          <div className="mt-2 text-sm text-gray-600 bg-white p-2 rounded-lg">
+                            {mood.description}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-10 text-gray-400">
+                  <Activity size={48} className="mx-auto mb-2 opacity-50" />
+                  <p>今天还没有记录心情</p>
+                  <button onClick={() => setShowMoodPicker(true)} className="mt-3 text-pink-500 font-bold hover:text-pink-600 transition">
+                    立即记录
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1319,6 +1961,209 @@ export default function CoupleApp() {
           </div>
         )}
 
+        {view === 'questions' && (
+          <div className="space-y-4 animate-fade-in pb-20">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                <MessageCircle className="text-green-500" /> 情侣问答
+              </h2>
+              <button onClick={() => setView('home')} className="text-gray-500 hover:text-gray-700">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* 提问区域 */}
+            <div className="bg-white/80 backdrop-blur-md rounded-3xl p-5 shadow-sm border border-white/50">
+              <h3 className="font-bold text-gray-800 mb-3">提出新问题</h3>
+              <div className="space-y-3">
+                <textarea 
+                  value={newQuestion}
+                  onChange={(e) => setNewQuestion(e.target.value)}
+                  placeholder="写下你想问问TA的问题..."
+                  className="w-full p-3 rounded-2xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-green-300 resize-none h-24"
+                />
+                <button 
+                  onClick={async () => {
+                      if (newQuestion.trim()) {
+                        try {
+                          // @ts-ignore
+                          const QuestionClass = AV.Object.extend('Question');
+                          const question = new QuestionClass();
+                          question.set('coupleId', coupleId);
+                          question.set('question', newQuestion.trim());
+                          question.set('authorName', userName);
+                          question.set('answered', false);
+                          await question.save();
+                          setNewQuestion('');
+                          fetchData();
+                        } catch (e) {
+                          console.error("添加问题失败", e);
+                          alert("发送失败，请稍后重试");
+                        }
+                      }
+                    }}
+                  className="w-full bg-green-500 text-white font-bold py-3 rounded-2xl shadow-lg shadow-green-200 hover:bg-green-600 active:scale-95 transition"
+                >
+                  发送问题
+                </button>
+              </div>
+            </div>
+
+            {/* 问题列表 */}
+            <div className="space-y-4">
+              <h3 className="font-bold text-gray-800">问答记录</h3>
+              
+              {/* 对方的未回答问题 */}
+              {questions.filter(q => q.authorName !== userName && !q.answered).length > 0 && (
+                <div className="bg-yellow-50 backdrop-blur-md rounded-3xl p-5 shadow-sm border border-yellow-100">
+                  <h4 className="font-bold text-yellow-700 mb-3">待回答的问题</h4>
+                  <div className="space-y-3">
+                    {questions
+                        .filter(q => q.authorName !== userName && !q.answered)
+                        .map(question => (
+                          <div key={question.id} className="bg-white/60 rounded-2xl p-4 border border-white/50">
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="text-sm font-bold text-yellow-700">{question.authorName}</span>
+                              <span className="text-xs text-gray-500">
+                                {new Date(question.createdAt).toLocaleString()}
+                              </span>
+                            </div>
+                            <p className="text-gray-700 mb-3">{question.question}</p>
+                            <div className="flex justify-end">
+                              <button 
+                                onClick={() => {
+                                  setCurrentQuestion(question);
+                                  setShowAnswerInput(true);
+                                  setAnswerText('');
+                                }}
+                                className="bg-yellow-500 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-yellow-600 active:scale-95 transition"
+                              >
+                                回答问题
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 我的未回答问题 */}
+              {questions.filter(q => q.authorName === userName && !q.answered).length > 0 && (
+                <div className="bg-blue-50 backdrop-blur-md rounded-3xl p-5 shadow-sm border border-blue-100">
+                  <h4 className="font-bold text-blue-700 mb-3">等待回答的问题</h4>
+                  <div className="space-y-3">
+                    {questions
+                      .filter(q => q.authorName === userName && !q.answered)
+                      .map(question => (
+                        <div key={question.id} className="bg-white/60 rounded-2xl p-4 border border-white/50">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-sm font-bold text-blue-700">{question.authorName}</span>
+                            <span className="text-xs text-gray-500">
+                              {new Date(question.createdAt).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="text-gray-700 mb-3">{question.question}</p>
+                          <div className="flex justify-end">
+                            <span className="text-xs text-gray-500">等待对方回答...</span>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 已回答的问题 */}
+              {questions.filter(q => q.answered).length > 0 && (
+                <div className="bg-green-50 backdrop-blur-md rounded-3xl p-5 shadow-sm border border-green-100">
+                  <h4 className="font-bold text-green-700 mb-3">已完成的问答</h4>
+                  <div className="space-y-3">
+                    {questions
+                          .filter(q => q.answered)
+                          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+                          .map(question => (
+                            <div key={question.id} className="bg-white/60 rounded-2xl p-4 border border-white/50">
+                              <div className="flex justify-between items-center mb-2">
+                                <span className="text-sm font-bold text-green-700">{question.authorName}</span>
+                                <span className="text-xs text-gray-500">
+                                  {new Date(question.createdAt).toLocaleString()}
+                                </span>
+                              </div>
+                              <p className="text-gray-700 font-medium mb-3">{question.question}</p>
+                              <div className="pl-4 border-l-2 border-green-300">
+                                <div className="flex justify-between items-center mb-1">
+                                  <span className="text-xs font-bold text-green-700">
+                                    {question.authorName === userName ? '对方' : question.authorName}
+                                  </span>
+                                </div>
+                                <p className="text-gray-600 italic">{question.answer}</p>
+                                <span className="text-xs text-gray-500 block mt-2">
+                                  回答于 {question.answerDate ? new Date(question.answerDate).toLocaleString() : ''}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 回答问题弹窗 */}
+            {showAnswerInput && currentQuestion && (
+              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-3xl p-6 w-full max-w-md animate-fade-in">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold text-gray-800">回答问题</h3>
+                    <button 
+                      onClick={() => setShowAnswerInput(false)}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      <X size={24} />
+                    </button>
+                  </div>
+                  <p className="text-gray-700 mb-4">{currentQuestion.question}</p>
+                  <textarea 
+                    value={answerText}
+                    onChange={(e) => setAnswerText(e.target.value)}
+                    placeholder="写下你的回答..."
+                    className="w-full p-3 rounded-2xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-green-300 resize-none h-32 mb-4"
+                  />
+                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => setShowAnswerInput(false)}
+                      className="flex-1 bg-gray-200 text-gray-700 font-bold py-3 rounded-2xl hover:bg-gray-300 active:scale-95 transition"
+                    >
+                      取消
+                    </button>
+                    <button 
+                      onClick={async () => {
+                        if (answerText.trim()) {
+                          try {
+                            const question = AV.Object.createWithoutData('Question', currentQuestion.id);
+                            question.set('answered', true);
+                            question.set('answer', answerText.trim());
+                            question.set('answerDate', new Date());
+                            await question.save();
+                            setShowAnswerInput(false);
+                            setAnswerText('');
+                            setCurrentQuestion(null);
+                            fetchData();
+                          } catch (e) {
+                            console.error("回答问题失败", e);
+                            alert("回答失败，请稍后重试");
+                          }
+                        }
+                      }}
+                      className="flex-1 bg-green-500 text-white font-bold py-3 rounded-2xl shadow-lg shadow-green-200 hover:bg-green-600 active:scale-95 transition"
+                    >
+                      提交回答
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {view === 'settings' && (
           <div className="space-y-6 animate-fade-in">
              <h2 className="text-2xl font-bold text-gray-800">设置</h2>
@@ -1471,6 +2316,96 @@ export default function CoupleApp() {
                     </button>
                 </div>
             </div>
+        </div>
+      )}
+
+      {/* 心情日历界面 */}
+      {showMoodCalendar && (
+        <div className="fixed inset-0 z-50 flex flex-col p-4 bg-white animate-fade-in">
+          {/* 顶部导航栏 */}
+          <div className="bg-white/80 backdrop-blur-md border-b border-gray-200 p-4 flex justify-between items-center z-10">
+            <button onClick={() => setShowMoodCalendar(false)} className="p-2 rounded-full hover:bg-gray-100 transition">
+              <X size={24} className="text-gray-700" />
+            </button>
+            <h2 className="text-xl font-bold text-gray-800">心情日历</h2>
+            <div className="w-10"></div> {/* 占位符，保持标题居中 */}
+          </div>
+
+          {/* 日历内容 */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {/* 月份导航 */}
+            <div className="flex justify-between items-center mb-6">
+              <button onClick={handlePrevMonth} className="p-3 rounded-full bg-gray-100 hover:bg-gray-200 transition">
+                <ChevronLeft size={24} className="text-gray-700" />
+              </button>
+              <h3 className="text-2xl font-bold text-gray-800">
+                {generateCalendarData.year}年{generateCalendarData.month + 1}月
+              </h3>
+              <button onClick={handleNextMonth} className="p-3 rounded-full bg-gray-100 hover:bg-gray-200 transition">
+                <ChevronRight size={24} className="text-gray-700" />
+              </button>
+            </div>
+
+            {/* 心情图例 */}
+            <div className="bg-white rounded-2xl p-4 shadow-sm mb-6">
+              <h4 className="font-bold text-gray-700 mb-3">心情图例</h4>
+              <div className="grid grid-cols-4 gap-2">
+                {moodOptions.map((mood) => (
+                  <div key={mood.label} className="flex items-center gap-2 text-sm">
+                    <span className="text-2xl">{mood.emoji}</span>
+                    <span className="text-gray-600">{mood.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 日历表格 */}
+            <div className="bg-white rounded-2xl p-4 shadow-sm">
+              {/* 星期标题 */}
+              <div className="grid grid-cols-7 gap-1 mb-2">
+                {generateCalendarData.weekdays.map((day, index) => (
+                  <div key={index} className="text-center py-2 font-bold text-gray-500">
+                    {day}
+                  </div>
+                ))}
+              </div>
+
+              {/* 日期单元格 */}
+              <div className="grid grid-cols-7 gap-1">
+                {generateCalendarData.days.map((day, index) => (
+                  <div 
+                    key={index} 
+                    className={`min-h-[80px] rounded-lg p-2 transition-all ${day.isCurrentMonth ? 'bg-gray-50' : 'bg-gray-100'}`}
+                  >
+                    <div className={`text-xs font-semibold mb-1 ${day.isCurrentMonth ? 'text-gray-700' : 'text-gray-400'}`}>
+                      {day.day}
+                    </div>
+                    
+                    {/* 我的心情 */}
+                    {day.myMood && (
+                      <div className="flex items-center justify-center text-2xl mb-1">
+                        {day.myMood.emoji}
+                      </div>
+                    )}
+                    
+                    {/* 伴侣的心情 */}
+                    {day.partnerMood && (
+                      <div className="flex items-center justify-center text-2xl">
+                        {day.partnerMood.emoji}
+                      </div>
+                    )}
+                    
+                    {/* 如果没有心情记录 */}
+                    {!day.myMood && !day.partnerMood && (
+                      <div className="flex items-center justify-center h-[48px]">
+                        <span className="text-gray-300 text-xs">无记录</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
